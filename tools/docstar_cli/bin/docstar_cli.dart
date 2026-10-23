@@ -1,5 +1,6 @@
-// pdfrx_engine + PDFium (chromium/7811) batch spike for local PDFs.
-//   dart run bin/spike.dart --in <folder-or-file> --out <folder outside any git repo> [--visual]
+// DocStar CLI (macOS): batch metrics for local PDFs; --visual draws layout overlays
+// (words, lines, blocks, table grids; see lib/overlay.dart for the colours).
+//   dart run bin/docstar_cli.dart --in <folder-or-file> --out <folder outside any git repo> [--visual]
 // Passwords: hidden TTY prompt only. Never args, never stored, never written.
 // metrics.json: labels + numbers + codepoint counts only. No names, paths, text or hashes.
 import 'dart:convert';
@@ -8,7 +9,9 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
-import 'package:image/image.dart' as img;
+import 'package:docstar_cli/overlay.dart';
+import 'package:docstar_core/docstar_core.dart';
+import 'package:docstar_pdfium/docstar_pdfium.dart';
 import 'package:pdfrx_engine/pdfrx_engine.dart';
 
 Never _die(String msg) {
@@ -33,7 +36,7 @@ Future<void> main(List<String> args) async {
             'Passwords are never accepted as arguments; you are prompted when needed.');
     }
   }
-  if (inArg == null || outArg == null) _die('Usage: dart run bin/spike.dart --in <folder-or-file> --out <folder> [--visual]');
+  if (inArg == null || outArg == null) _die('Usage: dart run bin/docstar_cli.dart --in <folder-or-file> --out <folder> [--visual]');
   _refuseInsideGit(outArg);
 
   final files = FileSystemEntity.isDirectorySync(inArg)
@@ -136,7 +139,6 @@ String _encryption(Uint8List b) {
 bool _pua(int c) => (c >= 0xE000 && c <= 0xF8FF) || (c >= 0xF0000 && c <= 0xFFFFD) || (c >= 0x100000 && c <= 0x10FFFD);
 bool _digit(int c) => c >= 0x30 && c <= 0x39;
 bool _space(int c) => String.fromCharCode(c).trim().isEmpty;
-bool _flagged(int c) => c == 0x20B9 || c == 0x60 || c == 0 || _pua(c);
 String _cp(int c) => 'U+${c.toRadixString(16).toUpperCase().padLeft(4, '0')}';
 double _mb(int bytes) => double.parse((bytes / 1048576).toStringAsFixed(1));
 double _ms(Stopwatch s) => s.elapsedMicroseconds / 1000;
@@ -274,45 +276,41 @@ Future<Map<String, Object?>> _measure(String path, String name, String label, St
       ..['deterministic'] = h1.join() == h2.join()
       ..['rss_start_mb'] = _mb(rss0)
       ..['peak_rss_mb'] = _mb(peak);
-    if (visualDir != null) await _visual(doc, visualDir);
+    final pages = await pagesOf(doc);
+    if (pages != null) {
+      final laid = layout(pages);
+      m['layout'] = _layoutCounts(laid);
+      if (visualDir != null) await drawOverlays(doc, laid, visualDir);
+    }
   } finally {
     await doc.dispose();
   }
   return m;
 }
 
-/// PNG per page with char boxes. Flagged chars (U+20B9, backtick, private-use, NUL) in magenta, others red.
-Future<void> _visual(PdfDocument doc, String dir) async {
-  Directory(dir).createSync(recursive: true);
-  const s = 2.0;
-  for (final page in doc.pages) {
-    final raw = await _text(page);
-    final w = (page.width * s).round(), h = (page.height * s).round();
-    final im = await page.render(width: w, height: h, fullWidth: w.toDouble(), fullHeight: h.toDouble(), backgroundColor: 0xffffffff);
-    if (im == null) continue;
-    try {
-      final canvas = im.createImageNF();
-      final runes = raw?.fullText.runes.toList() ?? const <int>[];
-      for (var i = 0; i < (raw?.charRects.length ?? 0); i++) {
-        if (raw!.charRects[i].isEmpty) continue;
-        // charRects are unrotated PDF coords (y up); same conversion pdfrx uses before drawing on the rotated page.
-        final r = raw.charRects[i].rotate(page.rotation.index, page);
-        img.drawRect(canvas,
-            x1: (r.left * s).round(),
-            y1: ((page.height - r.top) * s).round(),
-            x2: (r.right * s).round(),
-            y2: ((page.height - r.bottom) * s).round(),
-            color: i < runes.length && _flagged(runes[i]) ? img.ColorRgba8(255, 0, 255, 255) : img.ColorRgba8(255, 0, 0, 200));
-      }
-      File('$dir/page_${page.pageNumber}.png').writeAsBytesSync(img.encodePng(canvas));
-    } finally {
-      im.dispose();
-    }
-  }
-}
+/// Layout shape only (counts, sizes, booleans): no text.
+Map<String, Object?> _layoutCounts(DsDocument d) => {
+      'words': d.pages.fold<int>(0, (n, p) => n + p.words.length),
+      'lines': d.pages.fold<int>(0, (n, p) => n + p.lines.length),
+      'blocks': {
+        for (final l in BlockLabel.values)
+          l.name: d.pages.fold<int>(0, (n, p) => n + p.blocks.where((b) => b.label == l).length)
+      },
+      'reading_rotation_per_page': [for (final p in d.pages) p.readingRotation],
+      'tables': [
+        for (final t in d.tables)
+          {
+            'rows': t.rows,
+            'cols': t.cols,
+            'method': t.method.name,
+            'header': t.headerRow != null,
+            'linked_to_previous_page': t.continuesFrom != null,
+          }
+      ],
+    };
 
 void _table(List<Map<String, Object?>> rs, List<String> names) {
-  const cols = ['file', 'name', 'open', 'pg', 'chars', 'emptyBox', 'rot', 'enc', 'open_ms', 'ms/pg', 'MB', 'det', 'layer', 'flags'];
+  const cols = ['file', 'name', 'open', 'pg', 'chars', 'emptyBox', 'rot', 'enc', 'open_ms', 'ms/pg', 'MB', 'det', 'layer', 'tables', 'flags'];
   String g(Map<String, Object?> m, String k) => '${m[k] ?? '-'}';
   final rows = <List<String>>[];
   for (var i = 0; i < rs.length; i++) {
@@ -338,6 +336,7 @@ void _table(List<Map<String, Object?>> rs, List<String> names) {
       g(m, 'peak_rss_mb'),
       m['deterministic'] == null ? '-' : (m['deterministic'] == true ? 'yes' : 'NO'),
       g(m, 'text_layer'),
+      _tablesCell(m['layout']),
       flags.isEmpty ? '-' : flags,
     ]);
   }
@@ -347,4 +346,12 @@ void _table(List<Map<String, Object?>> rs, List<String> names) {
     ..writeln('\n${line(cols)}')
     ..writeln(w.map((n) => '-' * n).join('  '));
   rows.forEach((r) => stdout.writeln(line(r)));
+}
+
+/// "3 (2 linked)": tables found and how many continue a previous page's table.
+String _tablesCell(Object? layout) {
+  if (layout is! Map) return '-';
+  final t = layout['tables'] as List;
+  final linked = t.where((e) => (e as Map)['linked_to_previous_page'] == true).length;
+  return linked == 0 ? '${t.length}' : '${t.length} ($linked linked)';
 }

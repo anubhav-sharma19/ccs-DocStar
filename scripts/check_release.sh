@@ -11,7 +11,7 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 spike=$root/spikes/pdfrx_spike
 vendor=$root/third_party/pdfium/chromium-7811
-apps=(spikes/pdfrx_spike spikes/pdfrx_cli packages/docstar_pdfium)
+apps=(spikes/pdfrx_spike tools/docstar_cli packages/docstar_pdfium)
 # APK ABI -> vendored dir
 abis=(armeabi-v7a:android-arm arm64-v8a:android-arm64 x86_64:android-x64)
 vendored=(android-arm/libpdfium.so android-arm64/libpdfium.so android-x64/libpdfium.so mac-arm64/libpdfium.dylib)
@@ -43,7 +43,7 @@ done
 # --- 2. every root app resolves pdfium_dart to the fork ---
 step "checking pubspec.lock files"
 (cd "$spike" && flutter pub get >/dev/null) || fail "flutter pub get failed (spike)"
-(cd "$root/spikes/pdfrx_cli" && dart pub get >/dev/null) || fail "dart pub get failed (cli)"
+(cd "$root/tools/docstar_cli" && dart pub get >/dev/null) || fail "dart pub get failed (cli)"
 (cd "$root/packages/docstar_pdfium" && dart pub get >/dev/null) || fail "dart pub get failed (docstar_pdfium)"
 for app in "${apps[@]}"; do
   lock=$root/$app/pubspec.lock

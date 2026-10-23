@@ -44,12 +44,8 @@ Future<ReadResult> readPdf(Uint8List bytes, {PasswordProvider? passwords}) async
     return ReadFailed(cancelled ? ReadFailure.cancelled : ReadFailure.corrupt);
   }
   try {
-    final pages = <PageInput>[];
-    for (final page in doc.pages) {
-      final raw = await page.loadText();
-      if (raw == null) return const ReadFailed(ReadFailure.corrupt);
-      pages.add(_pageInput(page, raw.fullText, raw.charRects));
-    }
+    final pages = await pagesOf(doc);
+    if (pages == null) return const ReadFailed(ReadFailure.corrupt);
     if (pages.every((p) => p.chars.every((c) => c.isSpace))) return const ReadFailed(ReadFailure.noTextLayer);
     return ReadOk(pages);
   } catch (_) {
@@ -59,16 +55,31 @@ Future<ReadResult> readPdf(Uint8List bytes, {PasswordProvider? passwords}) async
   }
 }
 
+/// Char boxes of an already-open document (for callers that also render it,
+/// such as the CLI). Null if a page's text cannot be read.
+Future<List<PageInput>?> pagesOf(PdfDocument doc) async {
+  final pages = <PageInput>[];
+  for (final page in doc.pages) {
+    final raw = await page.loadText();
+    if (raw == null) return null;
+    pages.add(_pageInput(page, raw.fullText, raw.charRects));
+  }
+  return pages;
+}
+
 PageInput _pageInput(PdfPage page, String text, List<PdfRect> rects) {
   final rot = page.rotation.index * 90;
   final turned = rot == 90 || rot == 270;
   // pdfrx reports the rotated size; char rects are in the unrotated frame (spike item 2).
   final w0 = turned ? page.height : page.width, h0 = turned ? page.width : page.height;
+  // One rect per code point (pdfrx writes each char with writeCharCode), not per UTF-16 unit.
+  final runes = text.runes.toList();
+  final n = runes.length < rects.length ? runes.length : rects.length;
   return PageInput(
     page.pageNumber,
     page.width,
     page.height,
-    [for (var i = 0; i < text.length; i++) CharCell(i, text[i], toDisplay(rects[i], rot, w0, h0))],
+    [for (var i = 0; i < n; i++) CharCell(i, String.fromCharCode(runes[i]), toDisplay(rects[i], rot, w0, h0))],
     rotation: rot,
   );
 }

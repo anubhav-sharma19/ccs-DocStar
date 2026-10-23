@@ -11,7 +11,7 @@
 | A — Rename to DocStar + spike conditions C2/C3 | **DONE** (2026-10-23) |
 | B — Core design note | **DONE** (approved 2026-10-23 with additions) |
 | C — Core + tests | **DONE** (2026-10-23) |
-| D — Visual debug CLI | not started |
+| D — Visual debug CLI | **DONE** (2026-10-23) |
 
 Research phase complete. **All pack rules are hypotheses** until validated on real statements (Phase 0).
 
@@ -84,6 +84,14 @@ Still-open technical gaps: Stage 1 G3 (`sanitize_text`), G4 (`_sort_cells`), G6 
 
 Soft budget < 300 ms on the emulator: met by about 8x. Layout only; PDF char extraction (spike: 51-82 ms per 10 pages) is separate. A phone run is still pending.
 
+## Stage D: visual debug CLI (done 2026-10-23)
+
+- `spikes/pdfrx_cli` moved to `tools/docstar_cli` (git history kept). Its metrics mode, hidden password prompt and refusal to write output inside a git repo are unchanged. `metrics.json` gains layout counts (words, lines, blocks by label, tables with rows/cols/method/header/linked), still with no text. The terminal table gains a `tables` column.
+- `--visual` runs the real pipeline (`docstar_pdfium.pagesOf` → `layout`) and draws per page: words blue, lines green, blocks orange, page header/footer purple, table grid red (one rectangle per cell, at column and row extents). A legend is printed on each page. Boxes map back through `DsPage.toDisplay`, so rotated pages line up (checked by eye on the reportlab rot90 fixture and a generated sideways page).
+- Tests: `tools/docstar_cli/test/overlay_test.dart` (2): one PNG per page, every colour present, word pixels at the word's display box, on upright and sideways pages. Total suite: 71 tests (52 core, 17 adapter, 2 CLI).
+- Adapter fix found while reading the spike: chars are indexed by code point, not UTF-16 unit. pdfrx writes one rect per code point, so a character outside the BMP (for example supplementary private-use glyphs) would have shifted every later box.
+- **Finding from the overlays (not fixed):** large overprinted text across a table (the spike fixtures' `PROBE-ALPHA`/`PROBE-BETA` labels; on real statements, stamps or watermarks) joins the row's line. That line then straddles columns, so the table splits in two and the stamp text lands in a cell. Seen on `plain_1p.pdf` (2 tables instead of 1) and `ten_pages.pdf` (20 instead of 10). A likely fix: glyphs far taller than the line's median don't join it, and overprint lines are skipped by table runs.
+
 ## Open items
 
 - **iOS/macOS Flutter apps still fetch PDFium via pdfium_flutter podspec. Must vendor + hash-pin before Finora iOS build.**
@@ -91,6 +99,7 @@ Soft budget < 300 ms on the emulator: met by about 8x. Layout only; PDF char ext
 - `pub get` and Gradle still fetch packages from the network at build time; only the PDFium fetch was removed.
 - Spike device run (SPIKE_REPORT section 4) still pending; also run the layout benchmark on the phone.
 - Ruled tables (TR1/TR3), font-size headings (LR6), and blank vs scanned need data pdfrx does not expose (path objects, fonts, images). Add them through pdfium_dart bindings when a real statement needs them.
+- Overprinted large text (stamps/watermarks) splits tables (Stage D finding).
 - All layout thresholds are guesses tuned on synthetic Courier fixtures only. Phase 0 real statements will move them.
 
 ## Next phase (not started)
