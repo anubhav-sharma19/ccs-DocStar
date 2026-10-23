@@ -378,6 +378,8 @@ Each negative rule has a paired positive rule. These are acceptance tests (secti
 
 If S1-3 or S1-4 fail: fall back to `pdfium_dart` for direct PDFium calls; if PDFium itself is wrong, re-evaluate.
 
+**Spike result (2026-10-23, Android 16 arm64 emulator, fakes only; full report `spikes/pdfrx_spike/SPIKE_REPORT.md`):** S1-1 pass (wrong password -> `PdfPasswordException`, retry works, cancel is clean); S1-2 pass; S1-3 pass (boxes are PDF points, origin bottom-left, **relative to the crop box**); **S1-4 answered: boxes are in the UNROTATED page frame while `page.width/height` are rotated, so the adapter must convert**; S1-7 pass (identical output on repeated runs); S1-8 pass (`normalizeHebrewText` defaults to false); S1-9 pass (release arm64 APK +8.3 MB, no `INTERNET` in the release manifest). **S1-5 (rupee glyph on real statements) and phone performance are still pending a device run.** Condition found: the PDFium binary is downloaded at build time without a checksum, so vendor and pin it.
+
 ### 5.2 Other spikes
 
 | ID | Spike | Question | Done when |

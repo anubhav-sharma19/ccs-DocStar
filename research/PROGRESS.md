@@ -33,6 +33,10 @@ Q1 held-out split 2:1 and owner of real statements. Q2 which issuers you hold. Q
 
 Still-open technical gaps: Stage 1 G3 (`sanitize_text`), G4 (`_sort_cells`), G6 (rotation inside docling-parse), G7 (qpdf), G8 (font info in cells); Stage 2 P1-P5 (see `spec/packs/VALIDATION.md`).
 
+## Phase 3 pre-spike (pdfrx on Android): done on emulator
+
+`spikes/pdfrx_spike/` (throwaway Flutter app) + `SPIKE_REPORT.md`. Result: **GO (conditional)**. Items 1-8: pass on emulator (items 1, 3, 5, 8 also need a phone run; steps in the report). Findings: char boxes are in the unrotated frame; PDFium binary downloaded at build time unchecked (vendor + pin hash); `http` is in the dependency tree via `pdfrx_engine` but not linked in release; APK +8.3 MB; extraction 51-82 ms per 10 pages on the emulator. Spike code is not committed yet.
+
 ## Next phase (not started)
 
-Phase 0 (real-statement validation, local only) and the S1 spike on a device. No code has been written.
+Phase 0 (real-statement validation, local only) and the device run of the spike. No engine code has been written (the spike is throwaway).
