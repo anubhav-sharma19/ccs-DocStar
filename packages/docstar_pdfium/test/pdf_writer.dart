@@ -62,7 +62,7 @@ Uint8List buildPdf(List<FakePage> pages) {
     var res = '/Font << /F1 $font 0 R /F2 $bold 0 R >>';
     if (p.image) {
       final im = add('<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceGray '
-          '/BitsPerComponent 8 /Length 1 >>\nstream\n\x80\nendstream');
+          '/BitsPerComponent 8 /Length 1 >>\nstream\n\x5a\nendstream');
       res += ' /XObject << /Im1 $im 0 R >>';
     }
     kids.add(add('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${p.mediaW} ${p.mediaH}] '

@@ -117,6 +117,12 @@ Soft budget < 300 ms on the emulator: met by about 8x. Layout only; PDF char ext
 - CLI `--visual` also writes `visual/file_NN/transformed.json`: every table per page, `header` + `rows` of cell text, `continues_from`. It contains document text (same rule as the PNGs). Synthetic run: generated 3-page statement gives 3 tables (2 linked), 20 rows each; spike `ten_pages.pdf` gives 10 tables (9 linked).
 - Tests: core 64, adapter 24, CLI 3, all pass.
 
+## Redacted overlays (2026-10-23)
+
+- CLI `--redact`: shareable overlay PNGs in `<out>/redacted/`, drawn on a blank canvas. Words are black bars (drawn last, so always solid), plus lines, blocks, grid and overlays. Nothing is rendered from the PDF.
+- Test (synthetic page with an embedded image): every pixel below the legend is a palette colour, every word area is solid black, and the PNG holds only IHDR/IDAT/IEND chunks. Mutation check: if redact mode rendered the page, the test fails.
+- What still leaks: geometry (word positions and lengths, so the digit count of amounts) and the template look.
+
 ## Open items
 
 - **iOS/macOS Flutter apps still fetch PDFium via pdfium_flutter podspec. Must vendor + hash-pin before Finora iOS build.**

@@ -1,6 +1,7 @@
 // DocStar CLI (macOS): batch metrics for local PDFs; --visual draws layout overlays
 // (words, lines, blocks, table grids; see lib/overlay.dart for the colours).
-//   dart run bin/docstar_cli.dart --in <folder-or-file> --out <folder outside any git repo> [--visual]
+//   dart run bin/docstar_cli.dart --in <folder-or-file> --out <folder outside any git repo> [--visual] [--redact]
+// --redact: shareable PNGs in <out>/redacted/ (blank canvas, words as black bars, no PDF pixels).
 // Passwords: hidden TTY prompt only. Never args, never stored, never written.
 // metrics.json: labels + numbers + codepoint counts only. No names, paths, text or hashes.
 import 'dart:convert';
@@ -22,7 +23,7 @@ Never _die(String msg) {
 
 Future<void> main(List<String> args) async {
   String? inArg, outArg;
-  var visual = false;
+  var visual = false, redact = false;
   for (var i = 0; i < args.length; i++) {
     switch (args[i]) {
       case '--in':
@@ -31,13 +32,15 @@ Future<void> main(List<String> args) async {
         outArg = i + 1 < args.length ? args[++i] : null;
       case '--visual':
         visual = true;
+      case '--redact':
+        redact = true;
       // Deliberately not echoed: an unknown arg could be a password.
       default:
-        _die('Unknown argument. Usage: --in <folder-or-file> --out <folder> [--visual]\n'
+        _die('Unknown argument. Usage: --in <folder-or-file> --out <folder> [--visual] [--redact]\n'
             'Passwords are never accepted as arguments; you are prompted when needed.');
     }
   }
-  if (inArg == null || outArg == null) _die('Usage: dart run bin/docstar_cli.dart --in <folder-or-file> --out <folder> [--visual]');
+  if (inArg == null || outArg == null) _die('Usage: dart run bin/docstar_cli.dart --in <folder-or-file> --out <folder> [--visual] [--redact]');
   _refuseInsideGit(outArg);
 
   final files = FileSystemEntity.isDirectorySync(inArg)
@@ -63,7 +66,8 @@ Future<void> main(List<String> args) async {
     final label = 'file_${(i + 1).toString().padLeft(2, '0')}';
     names.add(files[i].split(Platform.pathSeparator).last);
     stdout.writeln('[$label] ${names.last}');
-    results.add(await _measure(files[i], names.last, label, visual ? '$outArg/visual/$label' : null));
+    results.add(await _measure(files[i], names.last, label, visual ? '$outArg/visual/$label' : null,
+        redact ? '$outArg/redacted/$label' : null));
   }
 
   File('$outArg/metrics.json').writeAsStringSync(const JsonEncoder.withIndent('  ').convert({
@@ -78,6 +82,10 @@ Future<void> main(List<String> args) async {
   await sigint.cancel(); // an active signal listener would keep the process alive
   if (visual) {
     stdout.writeln('Visual overlays (page_N.png) and table text (transformed.json) in $outArg/visual/ contain your document content. Keep them local.');
+  }
+  if (redact) {
+    stdout.writeln('Redacted PNGs in $outArg/redacted/: blank canvas, every word a black bar, no pixels from the PDF. '
+        'They still show layout geometry (word positions and lengths, so digit counts of amounts). Look at them before sharing.');
   }
 }
 
@@ -175,7 +183,7 @@ Future<bool> _hasInk(PdfPage p) async {
   }
 }
 
-Future<Map<String, Object?>> _measure(String path, String name, String label, String? visualDir) async {
+Future<Map<String, Object?>> _measure(String path, String name, String label, String? visualDir, String? redactDir) async {
   final m = <String, Object?>{'file': label, 'size_kb': File(path).lengthSync() ~/ 1024};
   m['encryption'] = _encryption(File(path).readAsBytesSync());
   final rss0 = ProcessInfo.currentRss;
@@ -287,6 +295,7 @@ Future<Map<String, Object?>> _measure(String path, String name, String label, St
         await drawOverlays(doc, laid, visualDir);
         File('$visualDir/transformed.json').writeAsStringSync(const JsonEncoder.withIndent('  ').convert(transformed(laid)));
       }
+      if (redactDir != null) await drawOverlays(doc, laid, redactDir, redact: true);
     }
   } finally {
     await doc.dispose();

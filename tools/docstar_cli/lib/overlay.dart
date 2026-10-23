@@ -1,5 +1,8 @@
 // --visual: one PNG per page, the rendered page with DocStar's layout drawn on top.
 // Output contains document content: keep it local (the CLI refuses --out inside git).
+// --redact: the same overlays on a BLANK canvas, every word a solid black bar. No
+// pixel comes from the PDF (logos, signatures, QR codes, text drawn as paths can't
+// leak); only geometry remains (word positions and lengths, table shape).
 import 'dart:io';
 
 import 'package:docstar_core/docstar_core.dart';
@@ -18,18 +21,22 @@ final colors = <String, img.ColorRgba8>{
   'overlay': img.ColorRgba8(128, 128, 128, 255), // grey: stamp/watermark blocks
 };
 
+final white = img.ColorRgba8(255, 255, 255, 255), black = img.ColorRgba8(0, 0, 0, 255);
+
 /// Writes `page_<n>.png` for every page into [dir]; returns the paths.
-Future<List<String>> drawOverlays(PdfDocument pdf, DsDocument doc, String dir) async {
+/// [redact]: blank canvas, words as black bars (nothing rendered from [pdf]).
+Future<List<String>> drawOverlays(PdfDocument pdf, DsDocument doc, String dir, {bool redact = false}) async {
   Directory(dir).createSync(recursive: true);
   final out = <String>[];
   for (final page in doc.pages) {
-    final pdfPage = pdf.pages[page.number - 1];
-    final w = (pdfPage.width * scale).round(), h = (pdfPage.height * scale).round();
-    final im = await pdfPage.render(
-        width: w, height: h, fullWidth: w.toDouble(), fullHeight: h.toDouble(), backgroundColor: 0xffffffff);
-    if (im == null) continue;
+    final w = (page.width * scale).round(), h = (page.height * scale).round();
+    final im = redact
+        ? null
+        : await pdf.pages[page.number - 1].render(
+            width: w, height: h, fullWidth: w.toDouble(), fullHeight: h.toDouble(), backgroundColor: 0xffffffff);
+    if (!redact && im == null) continue;
     try {
-      final canvas = im.createImageNF();
+      final canvas = im?.createImageNF() ?? img.fill(img.Image(width: w, height: h), color: white);
       void box(Box reading, String kind, {double pad = 0, int px = 1}) {
         final b = page.toDisplay(reading);
         img.drawRect(canvas,
@@ -41,8 +48,10 @@ Future<List<String>> drawOverlays(PdfDocument pdf, DsDocument doc, String dir) a
             thickness: px);
       }
 
-      for (final w in page.words) {
-        box(w.box, 'words');
+      if (!redact) {
+        for (final w in page.words) {
+          box(w.box, 'words');
+        }
       }
       for (final l in page.lines) {
         box(l.box, 'lines', pad: 1);
@@ -56,12 +65,24 @@ Future<List<String>> drawOverlays(PdfDocument pdf, DsDocument doc, String dir) a
         box(b.box, kind, pad: 3, px: 2);
         if (b.table != null) _grid(b.table!, (r) => box(r, 'table grid', pad: 2, px: 2));
       }
-      _legend(canvas);
+      if (redact) {
+        // Last, so no outline is drawn over a word: every word area is solid black.
+        for (final word in page.words) {
+          final b = page.toDisplay(word.box);
+          img.fillRect(canvas,
+              x1: (b.left * scale).floor(),
+              y1: (b.top * scale).floor(),
+              x2: (b.right * scale).ceil(),
+              y2: (b.bottom * scale).ceil(),
+              color: black);
+        }
+      }
+      _legend(canvas, redact);
       final path = '$dir/page_${page.number}.png';
       File(path).writeAsBytesSync(img.encodePng(canvas));
       out.add(path);
     } finally {
-      im.dispose();
+      im?.dispose();
     }
   }
   return out;
@@ -82,11 +103,16 @@ void _grid(Table t, void Function(Box) draw) {
   }
 }
 
-void _legend(img.Image canvas) {
-  final width = colors.keys.fold<int>(8, (w, k) => w + 28 + 8 * k.length);
+void _legend(img.Image canvas, bool redact) {
+  final entries = {
+    if (redact) 'words (redacted)': black,
+    for (final e in colors.entries)
+      if (!redact || e.key != 'words') e.key: e.value,
+  };
+  final width = entries.keys.fold<int>(8, (w, k) => w + 28 + 8 * k.length);
   img.fillRect(canvas, x1: 4, y1: 4, x2: width, y2: 26, color: img.ColorRgba8(255, 255, 255, 230));
   var x = 8;
-  for (final e in colors.entries) {
+  for (final e in entries.entries) {
     img.fillRect(canvas, x1: x, y1: 9, x2: x + 12, y2: 21, color: e.value);
     img.drawString(canvas, e.key, font: img.arial14, x: x + 16, y: 8, color: img.ColorRgba8(0, 0, 0, 255));
     x += 28 + 8 * e.key.length;

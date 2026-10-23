@@ -37,7 +37,13 @@ Supported PDFium targets: Android `armeabi-v7a`, `arm64-v8a`, `x86_64`, and macO
 cd tools/docstar_cli && dart run bin/docstar_cli.dart --in <pdf-or-folder> --out <folder outside any git repo> --visual
 ```
 
-Writes `metrics.json` (numbers and layout counts only, no text or file names) and, with `--visual`, `visual/file_NN/transformed.json` (every table per page: `header` and `rows` of cell text, plus `continues_from` for page links) and `visual/file_NN/page_N.png`: the rendered page with words (blue), lines (green), blocks (orange), page header/footer (purple), table grids (red, one rectangle per cell) and overlay stamps/watermarks (grey). PNGs and `transformed.json` show document content, so the CLI refuses an `--out` inside a git repo. Passwords are asked at a hidden prompt, never taken as arguments.
+Writes `metrics.json` (numbers and layout counts only, no text or file names) and, with `--visual`, `visual/file_NN/transformed.json` (every table per page: `header` and `rows` of cell text, plus `continues_from` for page links) and `visual/file_NN/page_N.png`: the rendered page with words (blue), lines (green), blocks (orange), page header/footer (purple), table grids (red, one rectangle per cell) and overlay stamps/watermarks (grey). Add `--redact` (with or without `--visual`) for **shareable** PNGs in `<out>/redacted/file_NN/page_N.png`. They are drawn on a blank canvas: every word is a solid black bar, plus the same layout outlines. No pixel comes from the PDF, so logos, signatures, QR codes or text drawn as shapes cannot leak, and the PNG carries no metadata. What still shows: layout geometry, i.e. word positions and lengths (so the digit count of an amount), and the overall template, which may hint at the bank. Look at each PNG before sharing; never share `visual/` or `transformed.json`.
+
+```bash
+cd tools/docstar_cli && dart run bin/docstar_cli.dart --in <pdf-or-folder> --out <folder outside any git repo> --visual --redact
+```
+
+The full (unredacted) PNGs and `transformed.json` show document content, so the CLI refuses an `--out` inside a git repo. Passwords are asked at a hidden prompt, never taken as arguments.
 
 ## Release check
 

@@ -67,4 +67,48 @@ void main() {
       }
     });
   }
+
+  test('--redact: no PDF pixels, every word solid black, PNG has no metadata chunks', () async {
+    // The page also carries an image (a stand-in for a logo/signature/scan): it must not leak.
+    final pdf = await PdfDocument.openData(buildPdf([FakePage(stmt(), image: true), FakePage(stmt())]));
+    final doc = layout((await pagesOf(pdf))!);
+    final dir = Directory.systemTemp.createTempSync('docstar_redact_');
+    try {
+      final files = await drawOverlays(pdf, doc, dir.path, redact: true);
+      expect(files, hasLength(2));
+      final bytes = File(files.first).readAsBytesSync();
+      final im = img.decodePng(bytes)!;
+      // 1. Below the legend strip, only palette colours: anything rendered (anti-aliased
+      //    glyphs, logos, images) would add other colours.
+      final palette = {for (final c in [white, black, ...colors.values]) (c.r, c.g, c.b)};
+      for (var y = 30; y < im.height; y++) {
+        for (var x = 0; x < im.width; x++) {
+          final p = im.getPixel(x, y);
+          expect(palette.contains((p.r, p.g, p.b)), isTrue, reason: 'pixel ($x,$y) = ${p.r},${p.g},${p.b}');
+        }
+      }
+      // 2. Every word area is solid black.
+      final page = doc.pages.first;
+      for (final w in page.words) {
+        final b = page.toDisplay(w.box);
+        for (var y = (b.top * scale).ceil(); y < (b.bottom * scale).floor(); y++) {
+          for (var x = (b.left * scale).ceil(); x < (b.right * scale).floor(); x++) {
+            final p = im.getPixel(x, y);
+            expect((p.r, p.g, p.b), (0, 0, 0), reason: 'word ${w.id} at ($x,$y)');
+          }
+        }
+      }
+      // 3. No text/metadata chunks in the PNG.
+      final chunks = <String>{};
+      for (var i = 8; i + 8 <= bytes.length;) {
+        final len = (bytes[i] << 24) | (bytes[i + 1] << 16) | (bytes[i + 2] << 8) | bytes[i + 3];
+        chunks.add(String.fromCharCodes(bytes.sublist(i + 4, i + 8)));
+        i += 12 + len;
+      }
+      expect(chunks.difference({'IHDR', 'PLTE', 'IDAT', 'IEND'}), isEmpty, reason: '$chunks');
+    } finally {
+      dir.deleteSync(recursive: true);
+      await pdf.dispose();
+    }
+  });
 }
