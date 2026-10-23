@@ -9,7 +9,7 @@
 | 2 — Pack logic from statement parsers | DONE |
 | 3 — Final engine spec | **DONE** (`research/ENGINE_SPEC.md`) |
 | A — Rename to DocStar + spike conditions C2/C3 | **DONE** (2026-10-23) |
-| B — Core design note | not started |
+| B — Core design note | **DONE, awaiting approval** (`docs/CORE_DESIGN.md`) |
 | C — Core + tests | not started |
 | D — Visual debug CLI | not started |
 
