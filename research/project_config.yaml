@@ -1,0 +1,155 @@
+# ccs-docengine research config (adapted from reverse-engineering-skill / tailor-bdd-skills-for-project)
+# Purpose: spec-only research. No product code, no real financial data.
+
+project:
+  name: ccs-docengine
+  goal: "Universal offline deterministic document engine; ML steps of Docling replaced by rules"
+  reference_design: "Docling (PDF path only)"
+
+# Output: research/spec/<category>/<step>.md  (reuses the BL skill's folder-per-category idea)
+bl_output:
+  root: "research/spec"
+  categories:
+    - core      # universal pipeline steps (Docling-derived)
+    - packs     # domain packs (bank_statement, credit_card; receipt later)
+  index_file: "research/PROGRESS.md"
+  glossary_file: "research/spec/glossary.md"   # create in Stage 1
+  discovery_file: "research/spec/DISCOVERY.md"  # create in Stage 1
+
+# Terms replace the business-domain glossary of the skill
+terminology:
+  terms:
+    - term: "page"
+      definition: "One sheet of a PDF with its size and coordinate system"
+      technical_alias: "Page (docling_core page.py)"
+    - term: "word cell"
+      definition: "Smallest text unit with its own bounding box, as read from the PDF"
+      technical_alias: "TextCell / text cell"
+    - term: "bbox"
+      definition: "Rectangle (left, top, right, bottom) that locates an item on a page"
+      technical_alias: "BoundingBox"
+    - term: "text line"
+      definition: "Word cells grouped into one visual line by y-position"
+      technical_alias: "line cluster"
+    - term: "block"
+      definition: "A layout region (paragraph, heading, picture, table area) found on a page"
+      technical_alias: "cluster, layout element"
+    - term: "table"
+      definition: "A grid of cells found in a block, with rows and columns"
+      technical_alias: "TableItem, TableStructure"
+    - term: "cell"
+      definition: "One table grid position, filled with word cells"
+      technical_alias: "TableCell"
+    - term: "reading order"
+      definition: "Sequence in which blocks are read from the page"
+      technical_alias: "ReadingOrder model"
+    - term: "document model"
+      definition: "Standard output tree: pages, blocks, tables, text, provenance"
+      technical_alias: "DoclingDocument"
+    - term: "pack"
+      definition: "Domain plug-in (bank statement, credit card) that adds rules, never core logic"
+      technical_alias: "domain pack"
+    - term: "profile"
+      definition: "Per-issuer settings selected by a fingerprint"
+      technical_alias: "issuer profile"
+    - term: "fingerprint"
+      definition: "Cheap text or layout cues that identify an issuer template"
+      technical_alias: "detection signature"
+
+# Entry points: discovered in research/sources/ (Docling clone @ 1ee1db0, docling-core @ b501ec8)
+entry_points:
+  framework: "Docling (Python)"
+
+  pdf_backend:
+    description: "Reads PDF text cells with coordinates (PDF backend)"
+    path_patterns:
+      - "research/sources/docling/docling/backend/pdf_backend.py"
+      - "research/sources/docling/docling/backend/docling_parse_v4_backend.py"
+      - "research/sources/docling/docling/backend/docling_parse_backend.py"
+      - "research/sources/docling/docling/backend/pypdfium2_backend.py"
+    grep_patterns: ["class .*PdfPageBackend", "get_text_cells", "get_text_in_rect"]
+    bl_category: "core"
+
+  layout_postprocessing:
+    description: "Clustering, merging and overlap resolution of layout boxes"
+    path_patterns:
+      - "research/sources/docling/docling/utils/layout_postprocessor.py"
+      - "research/sources/docling/docling/models/base_layout_postprocessing_model.py"
+    grep_patterns: ["def ", "overlap", "merge", "cluster"]
+    bl_category: "core"
+
+  table_structure:
+    description: "How predicted table cells are matched to text cells"
+    path_patterns:
+      - "research/sources/docling/docling/models/stages/table_structure/table_structure_model.py"
+      - "research/sources/docling/docling/models/stages/table_structure/table_structure_model_v2.py"
+      - "research/sources/docling/docling/models/base_table_model.py"
+    grep_patterns: ["cell", "overlap", "match"]
+    bl_category: "core"
+
+  reading_order:
+    description: "Ordering of blocks on the page"
+    path_patterns:
+      - "research/sources/docling/docling/models/stages/reading_order/readingorder_model.py"
+      - "research/sources/docling/docling/models/postprocessing/reading_order_rb.py"
+    grep_patterns: ["order", "sort"]
+    bl_category: "core"
+
+  assembly:
+    description: "Page assembly into document model"
+    path_patterns:
+      - "research/sources/docling/docling/models/stages/page_assemble/page_assemble_model.py"
+    grep_patterns: ["assemble", "def "]
+    bl_category: "core"
+
+  document_model:
+    description: "Standard output data model (docling-core)"
+    path_patterns:
+      - "research/sources/docling-core/docling_core/types/doc/document.py"
+      - "research/sources/docling-core/docling_core/types/doc/page.py"
+      - "research/sources/docling-core/docling_core/types/doc/base.py"
+    grep_patterns: ["class DoclingDocument", "class PageItem", "class BoundingBox"]
+    bl_category: "core"
+
+  pack_bank_statement:
+    description: "Parser rules for bank statements (Indian banks)"
+    path_patterns:
+      - "research/sources/stmt-forge/src/**"
+      - "research/sources/xfina/src/**"
+      - "research/sources/CardQL/**"
+      - "research/sources/bout/bout.py"
+    grep_patterns: ["HDFC", "ICICI", "SBI", "Dr", "Cr", "opening", "closing"]
+    bl_category: "packs"
+
+  pack_credit_card:
+    description: "Credit card statement rules (Indian issuers)"
+    path_patterns:
+      - "research/sources/stmt-forge/src/**"
+      - "research/sources/xfina/src/**"
+      - "research/sources/CardQL/**"
+    grep_patterns: ["credit", "due", "payment", "total", "EMI", "reward"]
+    bl_category: "packs"
+
+# Code roots used by validation (Stage 1 validation method)
+validation:
+  code_roots:
+    - "research/sources/docling/docling/"
+    - "research/sources/docling-core/docling_core/"
+  pack_code_roots:
+    - "research/sources/stmt-forge/src/"
+    - "research/sources/xfina/src/"
+    - "research/sources/CardQL/"
+    - "research/sources/bout/"
+
+# Skill-method notes for this project (skill: reverse-engineering-business-logic)
+method:
+  mode: "Workflow-to-BL"   # multi-step pipeline, not endpoints/billing
+  output_sections:          # replaces the 11 BL sections with spec sections
+    - "Purpose"
+    - "Input -> output shapes"
+    - "Steps with [DETERMINISTIC] or [ML] tag"
+    - "ML: what the model decides + deterministic replacement candidates"
+    - "Code references (file:line)"
+    - "Validation status (validate-business-logic-against-code method)"
+    - "Open questions"
+  evidence_rule: "Every claim cites file:line in research/sources/"
