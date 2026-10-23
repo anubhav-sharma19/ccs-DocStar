@@ -532,14 +532,17 @@ _PageBuild _buildPage(_Prepared p, LayoutConfig cfg, TableHints? hints, _TableIn
     final wide = rows.where((r) => r.length >= cfg.tableMinCols).length;
     final regular = wide >= cfg.tableMinLines && cols.length >= cfg.tableMinCols;
     final anchored = header != null && run.lines.length >= 2;
-    final headless = infos.isEmpty &&
-        prevLast != null &&
-        run.lines.first.box.top <= headerBottom + cfg.headlessTopBand * p.h &&
-        _colsMatch(cols, prevLast.cols, cfg.headlessTolerancePitch * p.pitch);
+    final tol = cfg.headlessTolerancePitch * p.pitch;
+    final atTop = infos.isEmpty && prevLast != null && run.lines.first.box.top <= headerBottom + cfg.headlessTopBand * p.h;
+    // Fewer columns than the previous page, each matching one of its columns in order:
+    // a sparse column (e.g. credits) has no entry on this page.
+    final fewer = atTop && cols.length < prevLast.cols.length && _colsSubset(cols, prevLast.cols, tol);
+    final headless = atTop && (fewer || _colsMatch(cols, prevLast.cols, tol));
     if (!regular && !anchored && !headless) continue;
 
     final headerLine = header ??
         (run.lines.first == rowLines.first && !RegExp(r'\d').hasMatch(run.lines.first.text) ? run.lines.first : null);
+    if (headerLine == null && fewer) cols = prevLast.cols; // grid on the previous page's columns
     if (headerLine != null) cols = _splitAtHeader(cols, _segments(headerLine, segGap), rows);
     if (header != null) cols = _anchorColumns(cols, header, hints!);
     final table = _grid(p, run.lines, cols, headerLine, hints, cfg, header != null);
@@ -724,6 +727,18 @@ List<_Range> _splitAtHeader(List<_Range> cols, List<_Range> headerSegs, List<Lis
     out.add(_Range(left, c.right));
   }
   return out;
+}
+
+/// Every column of [a] matches a column of [b], in order (greedy).
+bool _colsSubset(List<_Range> a, List<_Range> b, double tol) {
+  var j = 0;
+  for (final c in a) {
+    while (j < b.length && math.min((c.left - b[j].left).abs(), (c.right - b[j].right).abs()) > tol) {
+      j++;
+    }
+    if (j++ >= b.length) return false;
+  }
+  return a.isNotEmpty;
 }
 
 bool _colsMatch(List<_Range> a, List<_Range> b, double tol) {

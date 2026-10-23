@@ -339,6 +339,30 @@ void main() {
       expect(tables[1].continuesFrom, tables[0].id);
     });
 
+    test('headless page without an entry in a sparse column links and uses the previous columns', () {
+      final p1 = statement(pages: 1, creditEvery: 8).single; // 5 columns, credit column used once
+      final p2 = statement(pages: 2, rowsPerPage: 6, repeatHeader: false, creditEvery: 1000)[1]; // no credits
+      final tables = layout([p1, p2]).tables.toList();
+      expect(tables, hasLength(2));
+      expect(tables[0].cols, 5);
+      expect(tables[1].continuesFrom, tables[0].id);
+      expect(tables[1].cols, 5);
+      for (var r = 0; r < tables[1].rows; r++) {
+        expect(tables[1].cell(r, 0).text, matches(dateStart), reason: 'row $r date');
+        expect(tables[1].cell(r, 2).text, isNotEmpty, reason: 'row $r debit');
+        expect(tables[1].cell(r, 3).text, '', reason: 'row $r credit (none on this page)');
+        expect(tables[1].cell(r, 4).text, isNotEmpty, reason: 'row $r balance');
+      }
+    });
+
+    test('negative: missing sparse column AND columns moved by 3 pitches does not link', () {
+      final p1 = statement(pages: 1, creditEvery: 8).single;
+      final p2 = statement(pages: 2, rowsPerPage: 6, repeatHeader: false, creditEvery: 1000, headlessShift: 3 * adv)[1];
+      final tables = layout([p1, p2]).tables.toList();
+      expect(tables[1].continuesFrom, isNull);
+      expect(tables[1].cols, 4);
+    });
+
     test('headless table whose columns moved by 3 pitches does not link', () {
       final tables = layout(statement(pages: 2, repeatHeader: false, headlessShift: 3 * adv)).tables.toList();
       expect(tables[1].continuesFrom, isNull);
