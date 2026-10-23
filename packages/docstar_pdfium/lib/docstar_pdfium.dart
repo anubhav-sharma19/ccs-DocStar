@@ -1,8 +1,13 @@
 /// DocStar reader adapter (ENGINE_SPEC zone A) over pdfrx_engine / PDFium.
 /// Bytes + password callback -> per-char boxes in the display frame.
-/// Call pdfrxInitialize() (pure Dart) or the Flutter equivalent once first.
+///
+/// PDFium is not safe for concurrent use: run DocStar on one isolate and read
+/// PDFs one at a time. As a guard, [readPdf] turns on pdfrx's native
+/// process-wide PDFium gate (calls from other isolates wait instead of crashing
+/// the VM) and keeps one document open at a time per isolate.
 library;
 
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:docstar_core/docstar_core.dart';
@@ -29,7 +34,30 @@ class ReadFailed extends ReadResult {
   const ReadFailed(this.reason);
 }
 
-Future<ReadResult> readPdf(Uint8List bytes, {PasswordProvider? passwords}) async {
+/// Initializes PDFium with the process-wide gate on. Call it instead of
+/// pdfrxInitialize(), once, before anything else touches PDFium (Flutter: pass
+/// [tmpPath], e.g. getTemporaryDirectory()). [readPdf] calls it too.
+Future<void> initDocstarPdfium({String? tmpPath}) async {
+  try {
+    Pdfrx.useProcessWidePdfiumGate = true;
+  } on StateError {
+    throw StateError('PDFium was started without the process-wide gate. '
+        'Call initDocstarPdfium() instead of pdfrxInitialize(), before any PDFium use.');
+  }
+  await pdfrxInitialize(tmpPath: tmpPath, processWidePdfiumGate: true);
+}
+
+Future<void> _queue = Future.value();
+
+/// One open document at a time in this isolate: a second concurrent call waits.
+Future<ReadResult> readPdf(Uint8List bytes, {PasswordProvider? passwords}) {
+  final result = _queue.then((_) => _readPdf(bytes, passwords));
+  _queue = result.then((_) {}, onError: (_) {});
+  return result;
+}
+
+Future<ReadResult> _readPdf(Uint8List bytes, PasswordProvider? passwords) async {
+  await initDocstarPdfium();
   var attempts = 0;
   var cancelled = false;
   final PdfDocument doc;

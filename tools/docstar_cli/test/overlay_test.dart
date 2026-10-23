@@ -41,7 +41,7 @@ int count(img.Image im, img.ColorRgba8 c, [Box? b]) {
 }
 
 void main() {
-  setUpAll(() async => pdfrxInitialize());
+  setUpAll(() async => initDocstarPdfium());
 
   for (final (name, page) in [
     ('upright', FakePage(stmt())),

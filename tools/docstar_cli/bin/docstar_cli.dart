@@ -54,7 +54,7 @@ Future<void> main(List<String> args) async {
     } on StdinException {}
     exit(130);
   });
-  await pdfrxInitialize();
+  await initDocstarPdfium(); // process-wide PDFium gate on
 
   final results = <Map<String, Object?>>[];
   final names = <String>[]; // real names: terminal only

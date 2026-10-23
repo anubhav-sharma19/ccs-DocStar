@@ -2,11 +2,11 @@
 // isolates, and loading PDFium from two at once crashes the VM.
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:docstar_core/docstar_core.dart';
 import 'package:docstar_pdfium/docstar_pdfium.dart';
-import 'package:pdfrx_engine/pdfrx_engine.dart';
 import 'package:test/test.dart';
 
 import 'pdf_writer.dart';
@@ -56,7 +56,7 @@ Object? structure(DsDocument d) {
 }
 
 void main() {
-  setUpAll(() async => pdfrxInitialize());
+  setUpAll(() async => initDocstarPdfium());
 
   test('A-C1: unlocked PDF -> every page has char boxes inside the page', () async {
     final r = await readPdf(buildPdf([FakePage(stmt()), FakePage(stmt(header: false))]));
@@ -222,6 +222,28 @@ void main() {
       expect(overlays(doc), isEmpty);
       expect(doc.tables.single.rowTexts(0), ['Date', 'Description', 'Amount', 'Balance']);
       expect(cellTexts(doc).skip(4), clean.skip(4));
+    });
+  });
+
+  group('concurrency guard', () {
+    Uint8List pdf() => buildPdf([FakePage(stmt()), FakePage(stmt(header: false))]);
+    String json(ReadResult r) => layout((r as ReadOk).pages).toCanonicalJson();
+
+    test('two concurrent readPdf calls in one isolate both succeed, same result as sequential', () async {
+      final expected = json(await readPdf(pdf()));
+      final both = await Future.wait([readPdf(pdf()), readPdf(locked, passwords: (_) async => password)]);
+      expect(json(both[0]), expected);
+      expect(both[1], isA<ReadOk>());
+    });
+
+    test('two concurrent readPdf calls from two other isolates both succeed (native gate)', () async {
+      final bytes = pdf();
+      final expected = json(await readPdf(bytes));
+      final both = await Future.wait([
+        Isolate.run(() async => json(await readPdf(bytes))),
+        Isolate.run(() async => json(await readPdf(bytes))),
+      ]);
+      expect(both, [expected, expected]);
     });
   });
 }

@@ -104,6 +104,13 @@ Soft budget < 300 ms on the emulator: met by about 8x. Layout only; PDF char ext
 - Benchmark: Mac M2 AOT 16.5 → **23.0 ms** per 15-page document (chunking). The emulator was not re-measured; the budget is 300 ms (it was 30-36 ms).
 - Limits: normal-size text drawn over a table still ends it (not an overlay). A page title more than 2× the body size becomes an overlay, which may matter if a pack's fingerprint uses a large bank name; packs should also read overlay blocks for anchors.
 
+## Concurrency guard (2026-10-23)
+
+- Repro: two isolates reading PDFs at once abort the VM ("Cannot invoke native callback from a different isolate"). Concurrent calls within one isolate were already fine.
+- Fix: `initDocstarPdfium()` (called by `readPdf`) turns on pdfrx's native process-wide PDFium gate (`pdfrx_pdfium_gate.c`, a mutex around PDFium calls), and `readPdf` queues calls per isolate. README "Using DocStar" states the rule: one isolate, one document at a time.
+- Tests: two concurrent `readPdf` in one isolate, and two in two other isolates, both succeed with the sequential result. With the gate off, the two-isolate test crashes the VM.
+- Side effect: with the gate, PDFium's built-in font mapper replaces pdfrx's Dart mapper for non-embedded fonts. Generated Courier PDFs: same structure, boxes move by < 0.5 pt. Spike PDFs (embedded fonts): byte-identical output. This likely helps cross-device determinism (A-C7): no device system fonts involved.
+
 ## Open items
 
 - **iOS/macOS Flutter apps still fetch PDFium via pdfium_flutter podspec. Must vendor + hash-pin before Finora iOS build.**
