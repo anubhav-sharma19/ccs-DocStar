@@ -130,6 +130,12 @@ Soft budget < 300 ms on the emulator: met by about 8x. Layout only; PDF char ext
 - Failing synthetic tests first (low comma; credits in 1 of 8 rows), then the fixes. Earlier fixture hashes are byte-identical. A synthetic CLI run gives the same table counts and links; no stray `,` among 1,380 amount cells. Tests: core 66, adapter 24, CLI 4.
 - ~~Known limit: headless page missing a sparse column did not link~~: fixed. When its columns match a subset of the previous table's in order (within 1 pitch), it links and uses the previous columns. Negative test: missing column and shifted 3 pitches does not link. Earlier fixture hashes unchanged. Tests: core 68, adapter 24, CLI 4.
 
+## Stable columns across pages (2026-10-23)
+
+- Problem you raised: when a column (credits) is unused for a while, tables on those pages had fewer columns. Values then sat at different positions in the JSON from page to page.
+- Fix: (1) a headless page with more columns than the previous one (the column first used there) now links; (2) every chain of linked tables is gridded on one merged column set (second layout pass, only when counts differ). `transformed.json`: empty cells are `null`, plus `logical_tables` (each chain as one row list, `same_columns` check).
+- Tests: page 1 with no header and no credits, page 2 with credits: linked, both 5 columns, credits only at index 3, balance always at index 4. Turning off the unify pass fails the test. Earlier fixture hashes unchanged. Synthetic run: `ten_pages.pdf` gives one logical table, 10 pages, 450 rows of 5. Tests: core 69, adapter 24, CLI 5.
+
 ## Open items
 
 - **iOS/macOS Flutter apps still fetch PDFium via pdfium_flutter podspec. Must vendor + hash-pin before Finora iOS build.**

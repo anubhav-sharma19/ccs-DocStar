@@ -88,6 +88,7 @@ List<PageInput> statement({
   double rowPitch = 14, // baseline to baseline between rows
   double wrapPitch = 12, // baseline to baseline between a row and its wrapped line
   int creditEvery = 3, // every n-th row is a credit (sparse credit column when large)
+  bool firstHeader = true, // header row on page 1
 }) {
   final out = <PageInput>[];
   var row = 0;
@@ -100,7 +101,7 @@ List<PageInput> statement({
     }
     var y = 120.0;
     final shift = p > 1 ? headlessShift : 0.0;
-    if (p == 1 || repeatHeader) {
+    if (p == 1 ? firstHeader : repeatHeader) {
       texts.addAll([
         T(xDate, 120, 'Date', size: headerSize),
         T(xDesc, 120, 'Description', size: headerSize),

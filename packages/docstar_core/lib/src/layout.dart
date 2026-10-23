@@ -57,14 +57,57 @@ DsDocument layout(List<PageInput> pages, {LayoutConfig config = const LayoutConf
   final input = [...pages]..sort((a, b) => a.number.compareTo(b.number));
   final prepared = [for (final p in input) _Prepared(p, config)];
   _markFurniture(prepared, config);
-  final out = <DsPage>[];
-  _TableInfo? prevLast;
-  for (final p in prepared) {
-    final built = _buildPage(p, config, hints, prevLast);
-    out.add(built.page);
-    prevLast = built.lastTable;
+  List<_PageBuild> run(Map<(int, int), List<_Range>> forced) {
+    final out = <_PageBuild>[];
+    _TableInfo? prevLast;
+    for (final p in prepared) {
+      final built = _buildPage(p, config, hints, prevLast, forced);
+      out.add(built);
+      prevLast = built.lastTable;
+    }
+    return out;
   }
-  return DsDocument(out);
+
+  var built = run(const {});
+  final forced = _unifyChains(built, prepared, config);
+  if (forced.isNotEmpty) built = run(forced);
+  return DsDocument([for (final b in built) b.page]);
+}
+
+/// One column set per chain of linked tables (a page continuing the previous page's
+/// table): if their column counts differ (a sparse column only some pages use), every
+/// table in the chain is gridded on the merged columns, so a column keeps its index
+/// across the statement and is empty where unused. Keys: (page number, first line idx).
+Map<(int, int), List<_Range>> _unifyChains(List<_PageBuild> built, List<_Prepared> pages, LayoutConfig cfg) {
+  final tables = [for (final b in built) ...b.tables];
+  final chains = <List<_BuiltTable>>[];
+  final chainOf = <String, List<_BuiltTable>>{};
+  for (final t in tables) {
+    final prev = t.table.continuesFrom;
+    final chain = prev != null && chainOf.containsKey(prev) ? chainOf[prev]! : (chains..add([])).last;
+    chain.add(t);
+    chainOf[t.table.id] = chain;
+  }
+  final forced = <(int, int), List<_Range>>{};
+  for (final chain in chains) {
+    if (chain.map((t) => t.cols.length).toSet().length < 2) continue;
+    final tol = cfg.headlessTolerancePitch * pages.firstWhere((p) => p.input.number == chain.first.page).pitch;
+    final all = [for (final t in chain) ...t.cols]..sort((a, b) => a.left.compareTo(b.left));
+    final unified = <_Range>[];
+    for (final r in all) {
+      final last = unified.isEmpty ? null : unified.last;
+      if (last != null &&
+          (r.left < last.right || math.min((r.left - last.left).abs(), (r.right - last.right).abs()) <= tol)) {
+        unified[unified.length - 1] = _Range(last.left, math.max(last.right, r.right));
+      } else {
+        unified.add(r);
+      }
+    }
+    for (final t in chain) {
+      forced[(t.page, t.firstLine)] = unified;
+    }
+  }
+  return forced;
 }
 
 // ---------------------------------------------------------------- page prep
@@ -448,13 +491,22 @@ class _Run {
   List<_Range> bands = [];
 }
 
+class _BuiltTable {
+  final Table table;
+  final int page, firstLine;
+  final List<_Range> cols;
+  _BuiltTable(this.table, this.page, this.firstLine, this.cols);
+}
+
 class _PageBuild {
   final DsPage page;
   final _TableInfo? lastTable;
-  _PageBuild(this.page, this.lastTable);
+  final List<_BuiltTable> tables;
+  _PageBuild(this.page, this.lastTable, this.tables);
 }
 
-_PageBuild _buildPage(_Prepared p, LayoutConfig cfg, TableHints? hints, _TableInfo? prevLast) {
+_PageBuild _buildPage(
+    _Prepared p, LayoutConfig cfg, TableHints? hints, _TableInfo? prevLast, Map<(int, int), List<_Range>> forced) {
   final segGap = cfg.colGapPitch * p.pitch;
   final body = p.lines.where((l) => l.furniture == null && !l.overlay).toList();
   // Overlay rule 3 candidates: lines in a clearly larger font. They never join or
@@ -537,7 +589,9 @@ _PageBuild _buildPage(_Prepared p, LayoutConfig cfg, TableHints? hints, _TableIn
     // Fewer columns than the previous page, each matching one of its columns in order:
     // a sparse column (e.g. credits) has no entry on this page.
     final fewer = atTop && cols.length < prevLast.cols.length && _colsSubset(cols, prevLast.cols, tol);
-    final headless = atTop && (fewer || _colsMatch(cols, prevLast.cols, tol));
+    // More columns than the previous page: a sparse column first used here.
+    final more = atTop && cols.length > prevLast.cols.length && _colsSubset(prevLast.cols, cols, tol);
+    final headless = atTop && (fewer || more || _colsMatch(cols, prevLast.cols, tol));
     if (!regular && !anchored && !headless) continue;
 
     final headerLine = header ??
@@ -545,6 +599,7 @@ _PageBuild _buildPage(_Prepared p, LayoutConfig cfg, TableHints? hints, _TableIn
     if (headerLine == null && fewer) cols = prevLast.cols; // grid on the previous page's columns
     if (headerLine != null) cols = _splitAtHeader(cols, _segments(headerLine, segGap), rows);
     if (header != null) cols = _anchorColumns(cols, header, hints!);
+    cols = forced[(p.input.number, run.lines.first.idx)] ?? cols;
     final table = _grid(p, run.lines, cols, headerLine, hints, cfg, header != null);
     tableLines.addAll(run.lines);
     tableBlocks.add((run.lines.first, run.lines, table));
@@ -628,6 +683,7 @@ _PageBuild _buildPage(_Prepared p, LayoutConfig cfg, TableHints? hints, _TableIn
   };
 
   final blocks = <Block>[];
+  final builtTables = <_BuiltTable>[];
   _TableInfo? lastInfo;
   var tableNo = 0;
   for (final b in ordered) {
@@ -638,13 +694,14 @@ _PageBuild _buildPage(_Prepared p, LayoutConfig cfg, TableHints? hints, _TableIn
       table = _finishTable(info, 'p$n.t${tableNo++}', wordIds);
       if (lastInfo == null && prevLast != null) _link(info, table, prevLast, cfg, p);
       lastInfo = _TableInfo(table, info.cols, info.headerKey);
+      builtTables.add(_BuiltTable(table, n, b.$2.first.idx, info.cols));
     }
     blocks.add(Block('p$n.b${blocks.length}', b.$1, [for (final l in b.$2) lineObj[l]!], box, table: table));
   }
 
   final page = DsPage(n, p.input.width, p.input.height, p.input.rotation, p.readingRotation, words,
       [for (final l in p.lines) lineObj[l]!], blocks);
-  return _PageBuild(page, lastInfo);
+  return _PageBuild(page, lastInfo, builtTables);
 }
 
 _Line? _findHeader(List<_Line> lines, TableHints? hints) {
@@ -855,7 +912,11 @@ void _link(_Grid info, Table t, _TableInfo prev, LayoutConfig cfg, _Prepared p) 
   }
   final top = t.cells.isEmpty ? 0.0 : t.cells.first.box.top;
   final bodyTop = p.lines.where((l) => l.furniture == BlockLabel.pageHeader).fold<double>(0, (m, l) => math.max(m, l.box.bottom));
-  if (top <= bodyTop + cfg.headlessTopBand * p.h && _colsMatch(info.cols, prev.cols, cfg.headlessTolerancePitch * p.pitch)) {
+  final tol = cfg.headlessTolerancePitch * p.pitch;
+  final fits = _colsMatch(info.cols, prev.cols, tol) ||
+      _colsSubset(info.cols, prev.cols, tol) ||
+      _colsSubset(prev.cols, info.cols, tol);
+  if (top <= bodyTop + cfg.headlessTopBand * p.h && fits) {
     t.continuesFrom = prev.table.id;
   }
 }

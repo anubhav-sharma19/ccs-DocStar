@@ -355,6 +355,21 @@ void main() {
       }
     });
 
+    test('a sparse column first appearing on a later headless page: chain shares one column set', () {
+      // Page 1: no header, no credits (4 columns). Page 2: headless, credits every other row (5).
+      final p1 = statement(pages: 1, firstHeader: false, creditEvery: 1000).single;
+      final p2 = statement(pages: 2, rowsPerPage: 6, repeatHeader: false, creditEvery: 2)[1];
+      final tables = layout([p1, p2]).tables.toList();
+      expect(tables, hasLength(2));
+      expect(tables[1].continuesFrom, tables[0].id);
+      expect(tables.map((t) => t.cols), [5, 5]);
+      for (var r = 0; r < tables[0].rows; r++) {
+        expect(tables[0].cell(r, 3).text, '', reason: 'page 1 row $r: credit column empty');
+        expect(tables[0].cell(r, 4).text, isNotEmpty, reason: 'page 1 row $r: balance stays in column 4');
+      }
+      expect([for (var r = 0; r < tables[1].rows; r++) tables[1].cell(r, 3).text].where((t) => t.isNotEmpty), hasLength(3));
+    });
+
     test('negative: missing sparse column AND columns moved by 3 pitches does not link', () {
       final p1 = statement(pages: 1, creditEvery: 8).single;
       final p2 = statement(pages: 2, rowsPerPage: 6, repeatHeader: false, creditEvery: 1000, headlessShift: 3 * adv)[1];
