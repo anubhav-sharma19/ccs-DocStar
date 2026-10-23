@@ -110,7 +110,7 @@ class _Prepared {
     bool overlay(_Chunk c) => c.em > cfg.overprintHeightFactor * em || c.slope.abs() > cfg.overlaySlope;
     final chunkEm = {for (final c in chunks) for (final g in c.glyphs) g.index: c.em};
     final rawLines = _groupLines([for (final c in chunks) if (!overlay(c)) ...c.glyphs], cfg.lineOverlap,
-        (g) => chunkEm[g.index]!, cfg.overlaySizeRatio);
+        (g) => chunkEm[g.index]!, cfg.overlaySizeRatio, {for (final c in chunks) if (!overlay(c)) ..._followers(c)});
     pitch = _pitch([for (final l in rawLines) l.$1]);
     final built = <_Line>[];
     for (final (chars, lineEm) in rawLines) {
@@ -229,13 +229,27 @@ List<_Chunk> _chunks(List<CharCell> chars, Map<int, CharCell> byIndex) {
   return [for (final c in out) _Chunk(c)];
 }
 
+/// Punctuation and symbols in a chunk that also has letters or digits -> the
+/// nearest letter/digit of that chunk (previous one on ties). They join its line:
+/// a comma hanging below the baseline must not become a line of its own.
+Map<CharCell, CharCell> _followers(_Chunk c) {
+  final anchors = [for (final g in c.glyphs) if (_glyphEm(g) != null) g];
+  if (anchors.isEmpty) return const {};
+  return {
+    for (final g in c.glyphs)
+      if (_glyphEm(g) == null)
+        g: anchors.reduce((a, b) => (b.index - g.index).abs() < (a.index - g.index).abs() ? b : a)
+  };
+}
+
 /// Visual lines: a glyph joins the open line it overlaps most vertically, when the
 /// overlap is at least [overlap] of the smaller height and its chunk's font size is
 /// within [sizeRatio] of the line's (an overprinted stamp does not join a row).
 /// Glyphs go in by (top, left, index). Each line comes with its size estimate.
-List<(List<CharCell>, double)> _groupLines(
-    List<CharCell> glyphs, double overlap, double Function(CharCell) emOf, double sizeRatio) {
-  glyphs.sort((a, b) => _cmpBox(a.box, b.box, a.index, b.index));
+List<(List<CharCell>, double)> _groupLines(List<CharCell> glyphs, double overlap, double Function(CharCell) emOf,
+    double sizeRatio, Map<CharCell, CharCell> follows) {
+  glyphs = glyphs.where((g) => !follows.containsKey(g)).toList()
+    ..sort((a, b) => _cmpBox(a.box, b.box, a.index, b.index));
   final lines = <List<CharCell>>[];
   final bands = <Box>[];
   final ems = <double>[];
@@ -263,6 +277,10 @@ List<(List<CharCell>, double)> _groupLines(
       lines[best].add(g);
       bands[best] = bands[best].union(g.box);
     }
+  }
+  final lineOf = {for (var i = 0; i < lines.length; i++) for (final g in lines[i]) g.index: i};
+  for (final e in follows.entries) {
+    lines[lineOf[e.value.index]!].add(e.key);
   }
   for (final l in lines) {
     l.sort((a, b) {
@@ -509,7 +527,7 @@ _PageBuild _buildPage(_Prepared p, LayoutConfig cfg, TableHints? hints, _TableIn
   for (final run in runs) {
     final rowLines = [for (final l in run.lines) if (_segments(l, segGap).length >= 2) l];
     final rows = [for (final l in rowLines) _segments(l, segGap)];
-    var cols = _coverageColumns(rows, cfg.colGapRowShare);
+    var cols = _sparseColumns(_coverageColumns(rows, cfg.colGapRowShare), rows);
     final header = _findHeader(run.lines, hints);
     final wide = rows.where((r) => r.length >= cfg.tableMinCols).length;
     final regular = wide >= cfg.tableMinLines && cols.length >= cfg.tableMinCols;
@@ -665,6 +683,12 @@ List<_Range> _anchorColumns(List<_Range> cols, _Line header, TableHints hints) {
   }
   return out;
 }
+
+/// TR5 drops x-ranges used by <= 20% of rows. Segments lying wholly inside such a
+/// gap (touching no column) form a sparse column of their own, e.g. a credit
+/// column only a few rows use, instead of being pulled into a neighbour's cell.
+List<_Range> _sparseColumns(List<_Range> cols, List<List<_Range>> rows) =>
+    _mergeBands(cols, [for (final r in rows) for (final s in r) if (_hits(s, cols).isEmpty) s]);
 
 int _coverage(List<List<_Range>> rows, double a, double b) =>
     rows.where((r) => r.any((s) => s.left <= a && s.right >= b)).length;

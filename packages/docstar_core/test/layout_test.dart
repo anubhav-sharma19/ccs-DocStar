@@ -57,6 +57,24 @@ void main() {
   });
 
   group('words', () {
+    test('a comma hanging below the baseline stays in its amount (one word, one line)', () {
+      // Proportional-font comma: mostly below the baseline (43% overlap with the digits' band).
+      var x = 0.0;
+      final chars = <CharCell>[];
+      for (final ch in '246,348.58'.split('')) {
+        final box = ch == ','
+            ? Box(x + 1, 98.5, x + 2.5, 102)
+            : ch == '.'
+                ? Box(x + 1, 98.8, x + 2.5, 100)
+                : Box(x + 0.5, 93, x + 5.5, 100);
+        chars.add(CharCell(chars.length, ch, box));
+        x += ch == ',' || ch == '.' ? 3 : 6;
+      }
+      final page = layout([PageInput(1, 595, 842, chars)]).pages.single;
+      expect(page.lines, hasLength(1));
+      expect(page.words.map((w) => w.text), ['246,348.58']);
+    });
+
     // Proportional-font style: a narrow space (2 pt) leaves a 3 pt gap, under one pitch.
     CharCell g(int i, String s, double x) => CharCell(i, s, s == ' ' ? Box(x, 100, x + 2, 100) : Box(x + 0.5, 93, x + 5.5, 100));
     test('an explicit space splits words even when the gap is narrow', () {
@@ -145,6 +163,19 @@ void main() {
       ]);
       expect(doc.pages.single.words.where((w) => w.text == '1,23,456.78'), hasLength(1));
       expect(onlyTable(doc).cell(1, 2).text, '1,23,456.78');
+    });
+
+    test('sparse column (credits in 1 of 8 rows, < 20%) keeps its own column', () {
+      final t = onlyTable(layout(statement(noise: false, creditEvery: 8)));
+      expect(t.cols, 5);
+      expect(t.rowTexts(0), stmtHeaders);
+      // fixture row 7 (table row 8) is the only credit
+      expect(t.cell(8, 2).text, '');
+      expect(t.cell(8, 3).text, matches(RegExp(r'^[\d,]+\.\d\d$')));
+      expect(t.cell(8, 4).text, matches(RegExp(r'^[\d,]+\.\d\d$')));
+      for (var r = 1; r < t.rows; r++) {
+        if (r != 8) expect(t.cell(r, 3).text, '', reason: 'row $r');
+      }
     });
 
     test('empty cells exist with empty text', () {

@@ -123,6 +123,13 @@ Soft budget < 300 ms on the emulator: met by about 8x. Layout only; PDF char ext
 - Test (synthetic page with an embedded image): every pixel below the legend is a palette colour, every word area is solid black, and the PNG holds only IHDR/IDAT/IEND chunks. Mutation check: if redact mode rendered the page, the test fails.
 - What still leaks: geometry (word positions and lengths, so the digit count of amounts) and the template look.
 
+## Comma + sparse-column fixes (2026-10-23, from a synthetic crop you shared)
+
+- A comma hanging mostly below the baseline (< 50% overlap) became its own line, so `246,348.58` came out as the word `246348.58` and a stray `,` at the end of the cell. Fix: punctuation and symbols join the line of their stream run's nearest letter or digit.
+- A credit/deposit column used by under 20% of rows was dropped by TR5, and its amounts landed in the balance cell. Fix: segments wholly inside a coverage gap form a sparse column.
+- Failing synthetic tests first (low comma; credits in 1 of 8 rows), then the fixes. Earlier fixture hashes are byte-identical. A synthetic CLI run gives the same table counts and links; no stray `,` among 1,380 amount cells. Tests: core 66, adapter 24, CLI 4.
+- Known limit: a headless continuation page with no entry in a sparse column has one column fewer than the previous page, so it does not link (`continuesFrom` stays null). Pages with a repeated header still link.
+
 ## Open items
 
 - **iOS/macOS Flutter apps still fetch PDFium via pdfium_flutter podspec. Must vendor + hash-pin before Finora iOS build.**

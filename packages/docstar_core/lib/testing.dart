@@ -87,6 +87,7 @@ List<PageInput> statement({
   double headerSize = 10,
   double rowPitch = 14, // baseline to baseline between rows
   double wrapPitch = 12, // baseline to baseline between a row and its wrapped line
+  int creditEvery = 3, // every n-th row is a credit (sparse credit column when large)
 }) {
   final out = <PageInput>[];
   var row = 0;
@@ -117,7 +118,7 @@ List<PageInput> statement({
         texts.add(T(xDesc + shift, y, 'NEFT/REF${row}X'));
         y += wrapPitch;
       }
-      final debit = row % 3 != 2;
+      final debit = row % creditEvery != creditEvery - 1;
       final amt = 1000 + (row * 7919) % 12345678; // ragged lengths
       balance += debit ? -amt : amt;
       texts.add(T(xDate + shift, y, '${(row % 28 + 1).toString().padLeft(2, '0')}/06/2026'));
