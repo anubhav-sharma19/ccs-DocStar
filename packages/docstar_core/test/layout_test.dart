@@ -164,6 +164,27 @@ void main() {
       expect(t.cell(2, 1).text, 'UPI/1001/SHOP X');
     });
 
+    test('wrapped lines spaced like rows (gap > 1 line height) still join their row', () {
+      for (final before in [false, true]) {
+        final hints = before
+            ? TableHints(headerWords: stmtHeaders, rowStart: dateStart, continuation: Continuation.before)
+            : null;
+        final doc = layout(statement(wrapEvery: 3, before: before, rowPitch: 20, wrapPitch: 20, noise: false), hints: hints);
+        final t = onlyTable(doc);
+        expect(t.rows, 13, reason: 'before=$before');
+        expect(t.cell(1, 1).text, before ? 'NEFT/REF0X UPI/1000/SHOP' : 'UPI/1000/SHOP NAME CONTINUED 0');
+        expect(t.cell(4, 1).text, before ? 'NEFT/REF3X UPI/1003/SHOP XXX' : 'UPI/1003/SHOP XXX NAME CONTINUED 3');
+      }
+    });
+
+    test('negative: a note one blank line below the table stays text, not part of the last row', () {
+      final doc = layout(statement(noise: false, extra: const [T(xDesc, 318, 'NOTE BELOW THE TABLE')]));
+      expect(onlyTable(doc).rows, 13);
+      expect(onlyTable(doc).cells.where((c) => c.text.contains('NOTE')), isEmpty);
+      expect(doc.pages.single.blocks.where((b) => b.label == BlockLabel.text).map((b) => b.lines.single.text),
+          contains('NOTE BELOW THE TABLE'));
+    });
+
     test('wrapped multi-line cells, continuation before (IDFC style) via hints', () {
       final hints = TableHints(headerWords: stmtHeaders, rowStart: dateStart, continuation: Continuation.before);
       final t = onlyTable(layout(statement(wrapEvery: 3, before: true, noise: false), hints: hints));

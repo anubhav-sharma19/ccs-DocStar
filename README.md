@@ -37,7 +37,7 @@ Supported PDFium targets: Android `armeabi-v7a`, `arm64-v8a`, `x86_64`, and macO
 cd tools/docstar_cli && dart run bin/docstar_cli.dart --in <pdf-or-folder> --out <folder outside any git repo> --visual
 ```
 
-Writes `metrics.json` (numbers and layout counts only, no text or file names) and, with `--visual`, `visual/file_NN/page_N.png`: the rendered page with words (blue), lines (green), blocks (orange), page header/footer (purple), table grids (red, one rectangle per cell) and overlay stamps/watermarks (grey). PNGs show document content, so the CLI refuses an `--out` inside a git repo. Passwords are asked at a hidden prompt, never taken as arguments.
+Writes `metrics.json` (numbers and layout counts only, no text or file names) and, with `--visual`, `visual/file_NN/transformed.json` (every table per page: `header` and `rows` of cell text, plus `continues_from` for page links) and `visual/file_NN/page_N.png`: the rendered page with words (blue), lines (green), blocks (orange), page header/footer (purple), table grids (red, one rectangle per cell) and overlay stamps/watermarks (grey). PNGs and `transformed.json` show document content, so the CLI refuses an `--out` inside a git repo. Passwords are asked at a hidden prompt, never taken as arguments.
 
 ## Release check
 

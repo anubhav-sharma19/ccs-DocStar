@@ -10,6 +10,7 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:docstar_cli/overlay.dart';
+import 'package:docstar_cli/transformed.dart';
 import 'package:docstar_core/docstar_core.dart';
 import 'package:docstar_pdfium/docstar_pdfium.dart';
 import 'package:pdfrx_engine/pdfrx_engine.dart';
@@ -75,7 +76,9 @@ Future<void> main(List<String> args) async {
   _table(results, names);
   stdout.writeln('\nWrote $outArg/metrics.json (no filenames inside). MB = sampled in-process RSS: earlier files inflate the baseline.');
   await sigint.cancel(); // an active signal listener would keep the process alive
-  if (visual) stdout.writeln('Visual overlays in $outArg/visual/ contain your document content. Keep them local.');
+  if (visual) {
+    stdout.writeln('Visual overlays (page_N.png) and table text (transformed.json) in $outArg/visual/ contain your document content. Keep them local.');
+  }
 }
 
 /// Fails closed: if git can't confirm "not a repo", we refuse.
@@ -280,7 +283,10 @@ Future<Map<String, Object?>> _measure(String path, String name, String label, St
     if (pages != null) {
       final laid = layout(pages);
       m['layout'] = _layoutCounts(laid);
-      if (visualDir != null) await drawOverlays(doc, laid, visualDir);
+      if (visualDir != null) {
+        await drawOverlays(doc, laid, visualDir);
+        File('$visualDir/transformed.json').writeAsStringSync(const JsonEncoder.withIndent('  ').convert(transformed(laid)));
+      }
     }
   } finally {
     await doc.dispose();

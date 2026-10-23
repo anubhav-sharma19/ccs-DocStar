@@ -111,6 +111,12 @@ Soft budget < 300 ms on the emulator: met by about 8x. Layout only; PDF char ext
 - Tests: two concurrent `readPdf` in one isolate, and two in two other isolates, both succeed with the sequential result. With the gate off, the two-isolate test crashes the VM.
 - Side effect: with the gate, PDFium's built-in font mapper replaces pdfrx's Dart mapper for non-embedded fonts. Generated Courier PDFs: same structure, boxes move by < 0.5 pt. Spike PDFs (embedded fonts): byte-identical output. This likely helps cross-device determinism (A-C7): no device system fonts involved.
 
+## Continuation spacing + transformed.json (2026-10-23)
+
+- Continuation lines used to need a gap of at most 1.0 line height (X-CONT). Wrapped lines spaced like rows broke out of their cell, ended the table, and split one table into many small ones. Now the limit is max(1.0 line height, 1.2 × the page's median line gap) (`continuationGapSlack`, guess). Synthetic fixture: wraps at 20 pt pitch, after and before directions; it failed before the fix. Negative test: a note one blank line below the table stays text. All earlier fixture hashes are byte-identical.
+- CLI `--visual` also writes `visual/file_NN/transformed.json`: every table per page, `header` + `rows` of cell text, `continues_from`. It contains document text (same rule as the PNGs). Synthetic run: generated 3-page statement gives 3 tables (2 linked), 20 rows each; spike `ten_pages.pdf` gives 10 tables (9 linked).
+- Tests: core 64, adapter 24, CLI 3, all pass.
+
 ## Open items
 
 - **iOS/macOS Flutter apps still fetch PDFium via pdfium_flutter podspec. Must vendor + hash-pin before Finora iOS build.**

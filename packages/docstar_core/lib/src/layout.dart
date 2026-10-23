@@ -27,7 +27,7 @@ class LayoutConfig {
   final double headerFooterBand;
   final int headerFooterMinPages;
   final double colGapPitch, colGapRowShare, cellOverlap;
-  final double tableMaxGapLines, continuationGapLines;
+  final double tableMaxGapLines, continuationGapLines, continuationGapSlack;
   final double headlessTolerancePitch, headlessTopBand;
   final double overprintHeightFactor, overlaySlope, overlaySizeRatio;
   const LayoutConfig({
@@ -44,6 +44,7 @@ class LayoutConfig {
     this.cellOverlap = 0.3,
     this.tableMaxGapLines = 3.0,
     this.continuationGapLines = 1.0,
+    this.continuationGapSlack = 1.2,
     this.headlessTolerancePitch = 1.0,
     this.headlessTopBand = 0.25,
     this.overprintHeightFactor = 2.0,
@@ -446,6 +447,12 @@ _PageBuild _buildPage(_Prepared p, LayoutConfig cfg, TableHints? hints, _TableIn
       .fold<double>(0, (m, l) => math.max(m, l.box.bottom));
   bool isSection(_Line l) => hints?.sectionTitles.any((t) => _sameText(t, l.text)) ?? false;
 
+  // A wrapped line may sit as far below its row as the page's own line spacing
+  // (some statements space wrapped lines like rows), not only one line height.
+  final gaps = [for (var i = 1; i < body.length; i++) body[i].box.top - body[i - 1].box.bottom]
+    ..removeWhere((g) => g <= 0);
+  final contGap = math.max(cfg.continuationGapLines * p.lineHeight, cfg.continuationGapSlack * _median(gaps));
+
   // --- find runs of table-like lines (LR3)
   final runs = <_Run>[];
   _Run? cur;
@@ -458,7 +465,7 @@ _PageBuild _buildPage(_Prepared p, LayoutConfig cfg, TableHints? hints, _TableIn
     final add = <_Range>[];
     if (fits && !rowLike) {
       fits = _hits(segs.first, cur.bands).length == 1 &&
-          l.box.top - prev.box.bottom <= cfg.continuationGapLines * p.lineHeight;
+          l.box.top - prev.box.bottom <= contGap;
       add.addAll(segs);
     } else if (fits) {
       final bands = cur.bands;

@@ -85,6 +85,8 @@ List<PageInput> statement({
   double headlessShift = 0,
   List<T> extra = const [], // drawn last on page 1 (stamps, watermarks)
   double headerSize = 10,
+  double rowPitch = 14, // baseline to baseline between rows
+  double wrapPitch = 12, // baseline to baseline between a row and its wrapped line
 }) {
   final out = <PageInput>[];
   var row = 0;
@@ -113,7 +115,7 @@ List<PageInput> statement({
       final wrapped = wrapEvery > 0 && row % wrapEvery == 0;
       if (wrapped && before) {
         texts.add(T(xDesc + shift, y, 'NEFT/REF${row}X'));
-        y += 12;
+        y += wrapPitch;
       }
       final debit = row % 3 != 2;
       final amt = 1000 + (row * 7919) % 12345678; // ragged lengths
@@ -127,10 +129,10 @@ List<PageInput> statement({
       }
       texts.add(r(rBal + shift, y, amount(balance.abs())));
       if (wrapped && !before) {
-        y += 12;
+        y += wrapPitch;
         texts.add(T(xDesc + shift, y, 'NAME CONTINUED $row'));
       }
-      y += 14;
+      y += rowPitch;
     }
     if (p == 1) texts.addAll(extra);
     out.add(page(p, texts, turn: turn));
