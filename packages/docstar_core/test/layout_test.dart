@@ -385,6 +385,19 @@ void main() {
           expect(tables[0].continuesRow, isFalse);
         });
       }
+      for (final header in [false, true]) {
+        test('carried narration below an account-info block still joins its row (${header ? 'repeated header' : 'headless'})', () {
+          // Real statements repeat an account-info block above the table; it must not hide the table
+          // from the carried line and the page-break link.
+          final doc = layout(statement(pages: 2, repeatHeader: header, carryOver: 'REST OF NARRATION', accountBlock: true));
+          final stmt = [for (final t in doc.tables) if (t.cols == 5) t];
+          expect(stmt, hasLength(2));
+          final t = stmt[1];
+          expect(t.continuesFrom, stmt[0].id);
+          expect(t.continuesRow, isTrue);
+          expect(t.rowTexts(header ? 1 : 0), ['', 'REST OF NARRATION', '', '', '']);
+        });
+      }
       test('negative: a line two blank lines above the table stays text', () {
         final p1 = statement(pages: 1).single;
         final p2 = page(2, [

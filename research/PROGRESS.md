@@ -150,6 +150,12 @@ Done: Stages A-D, Phase 3b (overlays), concurrency guard, continuation spacing, 
 
 **Next step:** the user generates a fully synthetic hard statement with `research/synthetic_statement_prompt.md` (external model, reportlab, ground-truth `truth.json`) and shares the PDF. Then compare DocStar's `logical_tables` to `truth.json`, reproduce the bug on it, fix it, and commit the generator as a fixture.
 
+## Stage E: page-break narration fixed (2026-10-23)
+
+Root cause: linking and the carried-line rule only looked at the first table on a page. An account-info block above the statement table is a table too, so the statement table was never linked to the previous page and its carried narration line was dropped. Fix: link the first table on a page that matches the previous page's columns, and treat a table near the top of a continuing page as the continuation whether or not an earlier table exists.
+
+Tests: 2 new synthetic cases (headless and repeated header, account-info block above the table); core 74, adapter 24, CLI 6 all pass. Fixture canonical hashes (13 synthetic fixtures) unchanged. On the user's synthetic statement (`truth.json`): 193/193 narrations present (was 190/193); `check_release.sh` PASS.
+
 ## Open items
 
 - **iOS/macOS Flutter apps still fetch PDFium via pdfium_flutter podspec. Must vendor + hash-pin before Finora iOS build.**
