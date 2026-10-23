@@ -90,6 +90,7 @@ List<PageInput> statement({
   int creditEvery = 3, // every n-th row is a credit (sparse credit column when large)
   bool firstHeader = true, // header row on page 1
   String? carryOver, // on pages 2+: a narration line continued from the previous page, above the first row
+  bool accountBlock = false, // every page: a 2-line, 4-column account-info block above the table (as on real statements)
 }) {
   final out = <PageInput>[];
   var row = 0;
@@ -99,6 +100,16 @@ List<PageInput> statement({
     if (noise) {
       texts.add(const T(50, 40, 'DOCSTAR TEST BANK - ACCOUNT STATEMENT'));
       texts.add(T(50, 820, 'Page $p of $pages'));
+    }
+    if (accountBlock) {
+      // Own column positions (wider than the table's), so labels never touch their values.
+      texts.addAll(const [
+        T(50, 48, 'Account Holder :'), T(190, 48, 'ARJUN V KULKARNI'), T(330, 48, 'Currency :'), T(470, 48, 'INR'),
+        T(50, 60, 'Account No :'), T(190, 60, 'XXXXXXXX4321'), T(330, 60, 'Statement Period :'), T(470, 60, '01/06/26'),
+        T(50, 72, 'Customer ID :'), T(190, 72, 'NW48210937'), T(330, 72, 'Account Type :'), T(470, 72, 'Savings'),
+        T(50, 84, 'Branch :'), T(190, 84, 'Lakeview Plaza'), T(330, 84, 'Statement Date :'), T(470, 84, '01/09/26'),
+        T(50, 96, 'IFSC :'), T(190, 96, 'NWBK0001234'), T(330, 96, 'Page :'), T(470, 96, '2 of 2'),
+      ]);
     }
     var y = 120.0;
     final shift = p > 1 ? headlessShift : 0.0;
@@ -112,7 +123,7 @@ List<PageInput> statement({
       ]);
       y = 134;
     } else {
-      y = 100;
+      y = accountBlock ? 120 : 100; // with the account block: room for the block and its gap
     }
     if (p > 1 && carryOver != null) {
       texts.add(T(xDesc + shift, y, carryOver));

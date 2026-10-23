@@ -585,7 +585,9 @@ _PageBuild _buildPage(
     final regular = wide >= cfg.tableMinLines && cols.length >= cfg.tableMinCols;
     final anchored = header != null && run.lines.length >= 2;
     final tol = cfg.headlessTolerancePitch * p.pitch;
-    final atTop = infos.isEmpty && prevLast != null && run.lines.first.box.top <= headerBottom + cfg.headlessTopBand * p.h;
+    // Any table near the top of a continuing page may be the continuation, not only the first one:
+    // an account-info block above the statement table is a table too.
+    final atTop = prevLast != null && run.lines.first.box.top <= headerBottom + cfg.headlessTopBand * p.h;
     // Fewer columns than the previous page, each matching one of its columns in order:
     // a sparse column (e.g. credits) has no entry on this page.
     final fewer = atTop && cols.length < prevLast.cols.length && _colsSubset(cols, prevLast.cols, tol);
@@ -602,7 +604,7 @@ _PageBuild _buildPage(
     // A narration wrapped over the page break: single-column lines just above the
     // first table of a continuing page (top of page, wrap spacing) belong to it.
     var lines = run.lines;
-    if (headerLine == null && infos.isEmpty && prevLast != null) {
+    if (headerLine == null && headless) {
       final lead = <_Line>[];
       for (var i = body.indexOf(run.lines.first) - 1; i >= 0; i--) {
         final l = body[i], next = lead.isEmpty ? run.lines.first : lead.first;
@@ -707,13 +709,17 @@ _PageBuild _buildPage(
   final builtTables = <_BuiltTable>[];
   _TableInfo? lastInfo;
   var tableNo = 0;
+  var linked = false;
   for (final b in ordered) {
     final box = b.$2.map((l) => l.box).reduce((x, y) => x.union(y));
     Table? table;
     if (b.$3 != null) {
       final info = b.$3!;
       table = _finishTable(info, 'p$n.t${tableNo++}', wordIds);
-      if (lastInfo == null && prevLast != null) _link(info, table, prevLast, cfg, p);
+      if (!linked && prevLast != null) {
+        _link(info, table, prevLast, cfg, p);
+        linked = table.continuesFrom != null;
+      }
       table.continuesRow = table.continuesFrom != null && info.firstRowContinues;
       lastInfo = _TableInfo(table, info.cols, info.headerKey);
       builtTables.add(_BuiltTable(table, n, b.$2.first.idx, info.cols));
