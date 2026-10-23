@@ -24,7 +24,8 @@ No packs in this stage. `docstar_pdfium`'s own pubspec carries the `pdfium_dart`
 All steps are pure functions of `PageInput`s plus `LayoutConfig` plus optional `TableHints`.
 
 1. **Reading frame.** Detect each page's text direction from consecutive in-word chars (vote across 0/90/180/270; ties go to 0). Rotate the page's chars so text runs left-to-right and top-to-bottom. The page records `readingRotation`, so boxes can be mapped back for overlays. This is what makes a sideways page give the same structure (ours; the spike showed rotated fixtures keep text vertical in the display frame).
-2. **Lines.** Group chars into visual lines by vertical overlap, sorted by x (docling-parse "line runs").
+2. **Lines.** Group chars into visual lines by vertical overlap, sorted by x (docling-parse "line runs"). A glyph joins a line only if its chunk's font-size estimate is within `overlaySizeRatio` of the line's. A **chunk** is a stream-continuous run of glyphs; its size estimate is the median of glyph height ÷ shape factor (0.52 for x-height letters, 0.72 for caps, digits, ascenders and descenders; ours).
+   **Overlay (stamp/watermark), Phase 3b.** Positive: normal text has a size near the page median and a horizontal baseline. Negative, labelled `overlay`: (1) a chunk larger than `overprintHeightFactor` × the page median size; (2) a chunk of ≥ 4 glyphs whose baseline slope exceeds `overlaySlope`; (3) a line larger than `overlaySizeRatio` × the page size whose centre lies inside a table's region. Lines in rule 3's size class never join or break a table run. Overlay text never joins normal lines, enters a cell, or forms a text block. It keeps its words and char indices, and comes last in reading order. Normal-size text that does not fit a table's grid still ends the table (not an overlay; widen when a statement needs it).
 3. **Words.** Within a line, start a new word when the stream holds only whitespace between two neighbouring glyphs (PDFium inserts spaces and `\r\n` between separately placed runs; real spaces have width), or when the gap > 1.0 × **pitch**. Pitch is the page's median left-to-left distance of stream-adjacent glyphs, which is about one character advance. It is the length unit for every rule below. This replaces docling's `min(0.35, inferred)` × advance rule (`cells.h:897-944`): PDFium gives tight glyph boxes, not advances, so gaps inside amounts (`1,23,456.78`) are about 0.5 of a glyph width (probe, 2026-10-23). Each word keeps its **char indices**.
 4. **Blocks.** LR2: start a new block when the line gap > 1.5 × median line height or the left edge jumps > 1 char width. LR4: lines in the top or bottom 8% whose text (digits → `#`) repeats on ≥ 2 pages become `pageHeader` / `pageFooter`. Two guards (X-HDRFTR negative rule): a line with ≥ 3 segments (a table row) is never furniture, and furniture must be an unbroken stack from the page edge. Without them, transaction rows near the bottom were labelled footers (found by the benchmark fixture).
 5. **Table regions.** LR3(b): ≥ 3 consecutive lines sharing ≥ 3 x-columns, or a match of the hint header words (LR3(c)). Lines whose words sit inside existing columns (wrapped text) do not break the region.
@@ -37,7 +38,7 @@ All steps are pure functions of `PageInput`s plus `LayoutConfig` plus optional `
 
 ## 4. Document model (§1.3, trimmed)
 
-`DsDocument{pages}` → `DsPage{number, width, height, rotation, readingRotation, words, lines, blocks}`. `Word{id, text, box, charIndices}`, `Line{id, wordIds, box, text}`, `Block{id, label: text|sectionHeader|table|pageHeader|pageFooter, lineIds, box, table?}`, `Table{method: headerAnchored|whitespace, rows, cols, headerRow?, continuesFrom?, cells}`, `Cell{row, col, text, box, wordIds}`. Ids are page-scoped (`p1.w12`). **Provenance:** every cell → word ids → char indices + page. Boxes are in the reading frame; `DsPage.toDisplay(box)` maps them back. `sectionHeader` comes only from hint titles (no font size is available, LR6). No `picture` label (no image info).
+`DsDocument{pages}` → `DsPage{number, width, height, rotation, readingRotation, words, lines, blocks}`. `Word{id, text, box, charIndices}`, `Line{id, wordIds, box, text}`, `Block{id, label: text|sectionHeader|table|pageHeader|pageFooter|overlay, lineIds, box, table?}`, `Table{method: headerAnchored|whitespace, rows, cols, headerRow?, continuesFrom?, cells}`, `Cell{row, col, text, box, wordIds}`. Ids are page-scoped (`p1.w12`). **Provenance:** every cell → word ids → char indices + page. Boxes are in the reading frame; `DsPage.toDisplay(box)` maps them back. `sectionHeader` comes only from hint titles (no font size is available, LR6). No `picture` label (no image info).
 
 ## 5. Public API sketch
 
@@ -69,6 +70,9 @@ Flow later: `layout(no hints)` → `detect` → `layout(hintsFor(variant))` → 
 | `colGapPitch`, `colGapRowShare` | 1.5, 0.8 | **guess** TR5 |
 | `tableMaxGapLines`, `continuationGapLines` | 3.0, 1.0 line heights | **guess**; 1.0 from X-CONT |
 | `headlessTolerancePitch`, `headlessTopBand` | 1.0, 0.25 | **guess** (your item 2) |
+| `overprintHeightFactor` | 2.0 × page median font-size estimate | **guess** (overlay rule 1) |
+| `overlaySlope` | 0.15 baseline rise per unit run (about 8.5°) | **guess** (overlay rule 2) |
+| `overlaySizeRatio` | 1.4 | **guess**: line joining + overlay rule 3. The spike's 14/9 pt PROBE labels measure 1.53×, Courier lowercase vs caps about 1.1× |
 | `cellOverlap` | 0.3 | docling code |
 | `coordQuantum` | 0.01 pt | **guess** (ours) |
 

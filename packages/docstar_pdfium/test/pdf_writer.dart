@@ -2,13 +2,17 @@
 // optional /Rotate, optional image-only page. Courier is monospaced (600/1000 em),
 // so the geometry of every fixture is known.
 import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 
 class FakeText {
   final double x, y; // baseline start, display frame: points, origin top-left
   final String text;
   final double size;
-  const FakeText(this.x, this.y, this.text, {this.size = 10});
+  final double angle; // degrees, counter-clockwise (watermarks); upright unrotated pages only
+  final double gray; // fill: 0 black .. 1 white
+  final bool bold; // Courier-Bold
+  const FakeText(this.x, this.y, this.text, {this.size = 10, this.angle = 0, this.gray = 0, this.bold = false});
 }
 
 class FakePage {
@@ -41,17 +45,21 @@ Uint8List buildPdf(List<FakePage> pages) {
   add('<< /Type /Catalog /Pages 2 0 R >>');
   add(''); // pages, filled in below
   final font = add('<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>');
+  final bold = add('<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold >>');
   final kids = <int>[];
   for (final p in pages) {
     final sb = StringBuffer();
     if (p.image) sb.write('q ${p.mediaW - 100} 0 0 ${p.mediaH - 100} 50 50 cm /Im1 Do Q\n');
     for (final t in p.texts) {
-      final m = _matrix(p.upright ? p.rotate : 0, t.x, t.y, p.mediaW, p.mediaH);
-      sb.write('BT /F1 ${t.size} Tf $m Tm (${_esc(t.text)}) Tj ET\n');
+      final m = t.angle == 0
+          ? _matrix(p.upright ? p.rotate : 0, t.x, t.y, p.mediaW, p.mediaH)
+          : '${cos(t.angle * pi / 180)} ${sin(t.angle * pi / 180)} ${-sin(t.angle * pi / 180)} '
+              '${cos(t.angle * pi / 180)} ${t.x} ${p.mediaH - t.y}';
+      sb.write('BT ${t.gray} g /F${t.bold ? 2 : 1} ${t.size} Tf $m Tm (${_esc(t.text)}) Tj ET\n');
     }
     final content = sb.toString();
     final c = add('<< /Length ${latin1.encode(content).length} >>\nstream\n${content}endstream');
-    var res = '/Font << /F1 $font 0 R >>';
+    var res = '/Font << /F1 $font 0 R /F2 $bold 0 R >>';
     if (p.image) {
       final im = add('<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceGray '
           '/BitsPerComponent 8 /Length 1 >>\nstream\n\x80\nendstream');

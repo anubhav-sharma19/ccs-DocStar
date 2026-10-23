@@ -29,6 +29,7 @@ class LayoutConfig {
   final double colGapPitch, colGapRowShare, cellOverlap;
   final double tableMaxGapLines, continuationGapLines;
   final double headlessTolerancePitch, headlessTopBand;
+  final double overprintHeightFactor, overlaySlope, overlaySizeRatio;
   const LayoutConfig({
     this.wordGapPitch = 1.0,
     this.lineOverlap = 0.5,
@@ -45,6 +46,9 @@ class LayoutConfig {
     this.continuationGapLines = 1.0,
     this.headlessTolerancePitch = 1.0,
     this.headlessTopBand = 0.25,
+    this.overprintHeightFactor = 2.0,
+    this.overlaySlope = 0.15,
+    this.overlaySizeRatio = 1.4,
   });
 }
 
@@ -75,8 +79,10 @@ class _Line {
   final int idx; // top-to-bottom order on the page
   final List<_Word> words;
   final Box box;
+  final double em; // font size estimate of the line's first chunk
+  bool overlay; // stamp / watermark: never in a table, a cell or a text block
   BlockLabel? furniture;
-  _Line(this.idx, this.words, this.box);
+  _Line(this.idx, this.words, this.box, this.em, this.overlay);
   String get text => words.map((w) => w.text).join(' ');
 }
 
@@ -84,7 +90,7 @@ class _Prepared {
   final PageInput input;
   late final int readingRotation;
   late final double w, h; // reading-frame size
-  late final double pitch, lineHeight;
+  late final double pitch, lineHeight, em;
   late final List<_Line> lines;
 
   _Prepared(this.input, LayoutConfig cfg) {
@@ -97,16 +103,28 @@ class _Prepared {
       for (final c in chars) CharCell(c.index, c.text, _toReading(c.box, readingRotation, input.width, input.height))
     ];
     final byIndex = {for (final c in framed) c.index: c};
-    final rawLines = _groupLines(framed.where((c) => !c.isSpace).toList(), cfg.lineOverlap);
-    pitch = _pitch(rawLines);
+    final chunks = _chunks(framed, byIndex);
+    em = _median([for (final c in framed) ?_glyphEm(c)]);
+    // Overlay rules 1-2: a chunk far above the page's font size, or on a slanted baseline.
+    bool overlay(_Chunk c) => c.em > cfg.overprintHeightFactor * em || c.slope.abs() > cfg.overlaySlope;
+    final chunkEm = {for (final c in chunks) for (final g in c.glyphs) g.index: c.em};
+    final rawLines = _groupLines([for (final c in chunks) if (!overlay(c)) ...c.glyphs], cfg.lineOverlap,
+        (g) => chunkEm[g.index]!, cfg.overlaySizeRatio);
+    pitch = _pitch([for (final l in rawLines) l.$1]);
     final built = <_Line>[];
-    for (final chars in rawLines) {
+    for (final (chars, lineEm) in rawLines) {
       final words = _words(chars, byIndex, cfg.wordGapPitch * pitch);
-      built.add(_Line(0, words, words.map((w) => w.box).reduce((a, b) => a.union(b))));
+      built.add(_Line(0, words, words.map((w) => w.box).reduce((a, b) => a.union(b)), lineEm, false));
+    }
+    for (final c in chunks.where(overlay)) {
+      // Stream order runs left to right; the gap scales with the stamp's own font size.
+      final words = _words(c.glyphs, byIndex, cfg.wordGapPitch * pitch * math.max(1, c.em / em));
+      built.add(_Line(0, words, words.map((w) => w.box).reduce((a, b) => a.union(b)), c.em, true));
     }
     built.sort((a, b) => _cmpBox(a.box, b.box, a.words.first.chars.first, b.words.first.chars.first));
-    lines = [for (var i = 0; i < built.length; i++) _Line(i, built[i].words, built[i].box)];
-    lineHeight = lines.isEmpty ? 10 : _median([for (final l in lines) l.box.height]);
+    lines = [for (var i = 0; i < built.length; i++) _Line(i, built[i].words, built[i].box, built[i].em, built[i].overlay)];
+    final normal = [for (final l in lines) if (!l.overlay) l.box.height];
+    lineHeight = normal.isEmpty ? 10 : _median(normal);
   }
 }
 
@@ -154,12 +172,72 @@ Box _toReading(Box b, int r, double w, double h) => (switch (r) {
     })
         .quantized();
 
+/// Font size estimate from one glyph: tight box height over the glyph's share of
+/// the em (x-height letters ~0.52, caps/digits/ascenders/descenders ~0.72).
+/// ponytail: Latin letters and digits only; other glyphs do not vote. Per-script tables if needed.
+double? _glyphEm(CharCell c) {
+  if (c.text.length != 1) return null;
+  final u = c.text.codeUnitAt(0);
+  if (!(u >= 0x30 && u <= 0x39 || u >= 0x41 && u <= 0x5A || u >= 0x61 && u <= 0x7A)) return null;
+  return c.box.height / ('acemnorsuvwxz'.contains(c.text) ? 0.52 : 0.72);
+}
+
+/// A stream-continuous run of glyphs (one PDF text show, usually one font size).
+class _Chunk {
+  final List<CharCell> glyphs;
+  late final double em, slope;
+  _Chunk(this.glyphs) {
+    final ems = [for (final g in glyphs) ?_glyphEm(g)];
+    em = ems.isEmpty ? glyphs.map((g) => g.box.height).reduce(math.max) / 0.72 : _median(ems);
+    if (glyphs.length < 4) {
+      slope = 0;
+    } else {
+      // Baseline rise between the halves' medians: robust to descenders and commas.
+      final half = glyphs.length ~/ 2;
+      final a = glyphs.sublist(0, half), b = glyphs.sublist(glyphs.length - half);
+      final dx = _median([for (final g in b) g.box.cx]) - _median([for (final g in a) g.box.cx]);
+      final dy = _median([for (final g in a) g.box.bottom]) - _median([for (final g in b) g.box.bottom]);
+      slope = dx <= 0 ? 0 : dy / dx;
+    }
+  }
+}
+
+/// Splits the glyph stream into chunks: the next glyph continues a chunk when only
+/// whitespace lies between them in the stream and it sits just ahead on (about) the same path.
+List<_Chunk> _chunks(List<CharCell> chars, Map<int, CharCell> byIndex) {
+  final out = <List<CharCell>>[];
+  CharCell? prev;
+  for (final g in chars) {
+    if (g.isSpace) continue;
+    final p = prev;
+    var joins = false;
+    if (p != null && (g.index == p.index + 1 || _explicitSpace(p, g, byIndex))) {
+      final size = math.max(p.box.height, g.box.height);
+      final dx = g.box.cx - p.box.cx;
+      joins = dx > 0 &&
+          g.box.left - p.box.right <= 2 * size &&
+          (g.box.bottom - p.box.bottom).abs() <= math.max(0.5 * size, 1.5 * dx);
+    }
+    if (joins) {
+      out.last.add(g);
+    } else {
+      out.add([g]);
+    }
+    prev = g;
+  }
+  return [for (final c in out) _Chunk(c)];
+}
+
 /// Visual lines: a glyph joins the open line it overlaps most vertically, when the
-/// overlap is at least [overlap] of the smaller height. Glyphs go in by (top, left, index).
-List<List<CharCell>> _groupLines(List<CharCell> glyphs, double overlap) {
+/// overlap is at least [overlap] of the smaller height and its chunk's font size is
+/// within [sizeRatio] of the line's (an overprinted stamp does not join a row).
+/// Glyphs go in by (top, left, index). Each line comes with its size estimate.
+List<(List<CharCell>, double)> _groupLines(
+    List<CharCell> glyphs, double overlap, double Function(CharCell) emOf, double sizeRatio) {
   glyphs.sort((a, b) => _cmpBox(a.box, b.box, a.index, b.index));
   final lines = <List<CharCell>>[];
   final bands = <Box>[];
+  final ems = <double>[];
   final open = <int>[];
   for (final g in glyphs) {
     open.removeWhere((i) => bands[i].bottom < g.box.top);
@@ -168,7 +246,9 @@ List<List<CharCell>> _groupLines(List<CharCell> glyphs, double overlap) {
     for (final i in open) {
       final ov = g.box.vOverlap(bands[i]);
       final need = overlap * math.max(0.01, math.min(g.box.height, bands[i].height));
-      if (ov >= need && ov > bestOv) {
+      final e = emOf(g);
+      final sameSize = math.max(e, ems[i]) <= sizeRatio * math.min(e, ems[i]);
+      if (ov >= need && ov > bestOv && sameSize) {
         best = i;
         bestOv = ov;
       }
@@ -176,6 +256,7 @@ List<List<CharCell>> _groupLines(List<CharCell> glyphs, double overlap) {
     if (best < 0) {
       lines.add([g]);
       bands.add(g.box);
+      ems.add(emOf(g));
       open.add(lines.length - 1);
     } else {
       lines[best].add(g);
@@ -188,7 +269,7 @@ List<List<CharCell>> _groupLines(List<CharCell> glyphs, double overlap) {
       return c != 0 ? c : a.index.compareTo(b.index);
     });
   }
-  return lines;
+  return [for (var i = 0; i < lines.length; i++) (lines[i], ems[i])];
 }
 
 /// About one character advance: median left-to-left step of stream-adjacent glyphs.
@@ -246,7 +327,7 @@ String _norm(String s) => s.toLowerCase().replaceAll(RegExp(r'\d'), '#').replace
 void _markFurniture(List<_Prepared> pages, LayoutConfig cfg) {
   if (pages.length < cfg.headerFooterMinPages) return;
   String? key(_Prepared p, _Line l) {
-    if (_segments(l, cfg.colGapPitch * p.pitch).length >= cfg.tableMinCols) return null;
+    if (l.overlay || _segments(l, cfg.colGapPitch * p.pitch).length >= cfg.tableMinCols) return null;
     if (l.box.top < cfg.headerFooterBand * p.h) return 'h|${_norm(l.text)}';
     if (l.box.bottom > (1 - cfg.headerFooterBand) * p.h) return 'f|${_norm(l.text)}';
     return null;
@@ -265,11 +346,11 @@ void _markFurniture(List<_Prepared> pages, LayoutConfig cfg) {
   }
 
   for (final p in pages) {
-    for (final l in p.lines) {
+    for (final l in p.lines.where((l) => !l.overlay)) {
       if (!repeated(p, l, 'h')) break;
       l.furniture = BlockLabel.pageHeader;
     }
-    for (final l in p.lines.reversed) {
+    for (final l in p.lines.reversed.where((l) => !l.overlay)) {
       if (!repeated(p, l, 'f')) break;
       l.furniture = BlockLabel.pageFooter;
     }
@@ -356,7 +437,10 @@ class _PageBuild {
 
 _PageBuild _buildPage(_Prepared p, LayoutConfig cfg, TableHints? hints, _TableInfo? prevLast) {
   final segGap = cfg.colGapPitch * p.pitch;
-  final body = p.lines.where((l) => l.furniture == null).toList();
+  final body = p.lines.where((l) => l.furniture == null && !l.overlay).toList();
+  // Overlay rule 3 candidates: lines in a clearly larger font. They never join or
+  // break a table run; inside a table's region they become overlays (below).
+  bool tall(_Line l) => l.em > cfg.overlaySizeRatio * p.em;
   final headerBottom = p.lines
       .where((l) => l.furniture == BlockLabel.pageHeader)
       .fold<double>(0, (m, l) => math.max(m, l.box.bottom));
@@ -367,6 +451,7 @@ _PageBuild _buildPage(_Prepared p, LayoutConfig cfg, TableHints? hints, _TableIn
   _Run? cur;
   _Line? prev;
   for (final l in body) {
+    if (tall(l)) continue;
     final segs = _segments(l, segGap);
     final rowLike = segs.length >= 2;
     var fits = cur != null && !isSection(l) && l.box.top - prev!.box.bottom <= cfg.tableMaxGapLines * p.lineHeight;
@@ -438,11 +523,20 @@ _PageBuild _buildPage(_Prepared p, LayoutConfig cfg, TableHints? hints, _TableIn
     infos.add(table);
   }
 
+  // --- overlay rule 3: a larger-font line inside a table's region is a stamp, not text.
+  // ponytail: normal-size text that does not fit the grid still ends the table; widen when a statement needs it.
+  for (final l in body.where((l) => tall(l))) {
+    for (final t in tableBlocks) {
+      final box = t.$2.map((x) => x.box).reduce((a, b) => a.union(b));
+      if (l.box.cy >= box.top && l.box.cy <= box.bottom && l.box.hOverlap(box.left, box.right) > 0) l.overlay = true;
+    }
+  }
+
   // --- text blocks (LR2) from the remaining body lines
   final textBlocks = <(BlockLabel, List<_Line>)>[];
   final tableTops = [for (final t in tableBlocks) t.$1.box.top];
   _Line? last;
-  for (final l in body.where((l) => !tableLines.contains(l))) {
+  for (final l in body.where((l) => !tableLines.contains(l) && !l.overlay)) {
     final section = isSection(l);
     final lastBlock = textBlocks.isEmpty ? null : textBlocks.last;
     final newBlock = last == null ||
@@ -463,9 +557,17 @@ _PageBuild _buildPage(_Prepared p, LayoutConfig cfg, TableHints? hints, _TableIn
       textBlocks.add((label, [l]));
     }
   }
+  for (final l in p.lines.where((l) => l.overlay)) {
+    textBlocks.add((BlockLabel.overlay, [l]));
+  }
 
-  // --- reading order: page headers, body by (top, left), page footers
-  int rank(BlockLabel b) => b == BlockLabel.pageHeader ? 0 : (b == BlockLabel.pageFooter ? 2 : 1);
+  // --- reading order: page headers, body by (top, left), page footers, overlays
+  int rank(BlockLabel b) => switch (b) {
+        BlockLabel.pageHeader => 0,
+        BlockLabel.pageFooter => 2,
+        BlockLabel.overlay => 3,
+        _ => 1,
+      };
   final ordered = <(BlockLabel, List<_Line>, _Grid?)>[
     for (final t in tableBlocks) (BlockLabel.table, t.$2, t.$3),
     for (final b in textBlocks) (b.$1, b.$2, null),

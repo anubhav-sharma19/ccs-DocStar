@@ -12,6 +12,7 @@
 | B — Core design note | **DONE** (approved 2026-10-23 with additions) |
 | C — Core + tests | **DONE** (2026-10-23) |
 | D — Visual debug CLI | **DONE** (2026-10-23) |
+| 3b — Overprint / watermark fix (before packs) | **DONE** (2026-10-23) |
 
 Research phase complete. **All pack rules are hypotheses** until validated on real statements (Phase 0).
 
@@ -92,6 +93,17 @@ Soft budget < 300 ms on the emulator: met by about 8x. Layout only; PDF char ext
 - Adapter fix found while reading the spike: chars are indexed by code point, not UTF-16 unit. pdfrx writes one rect per code point, so a character outside the BMP (for example supplementary private-use glyphs) would have shifted every later box.
 - **Finding from the overlays (not fixed):** large overprinted text across a table (the spike fixtures' `PROBE-ALPHA`/`PROBE-BETA` labels; on real statements, stamps or watermarks) joins the row's line. That line then straddles columns, so the table splits in two and the stamp text lands in a cell. Seen on `plain_1p.pdf` (2 tables instead of 1) and `ten_pages.pdf` (20 instead of 10). A likely fix: glyphs far taller than the line's median don't join it, and overprint lines are skipped by table runs.
 
+## Phase 3b: overprint / watermark fix (done 2026-10-23)
+
+- New block label `overlay` (stamp/watermark) and three config guesses: `overprintHeightFactor` 2.0, `overlaySlope` 0.15, `overlaySizeRatio` 1.4 (`docs/CORE_DESIGN.md` §3.2).
+- Size is estimated per stream chunk as glyph height ÷ shape factor. Raw height can't be used: the spike's PROBE labels are 14 pt on 9 pt body text, only 1.53×, below the 2.0× rule, and lowercase letters are about 0.7× the height of capitals. Rule 3 (larger font inside a table's region) is what catches PROBE. Rules 1 and 2 catch big stamps anywhere and slanted watermarks.
+- Results: spike `plain_1p.pdf` gives **1 table** (was 2) and `ten_pages.pdf` **10** (was 20). PROBE-ALPHA/BETA are `overlay` blocks and no cell contains PROBE. PROBE-GAMMA (10 pt, outside the table) stays a text block, which is correct under the rules.
+- Tests: **86, all pass** (core 62, adapter 22, CLI 2). New: generated (a) 40-44 pt DUPLICATE stamp across a table, (b) slanted light watermark, (c) control: bold 11.5 pt header (not an overlay); also a large title above a table stays text, a stamp outside tables (rule 1 alone), and a 1.5× label on a row's exact baseline. Turning off each rule fails its own test.
+- Determinism: canonical-JSON hashes of all overlay-free fixtures are **byte-identical** before and after the change (13 core fixtures incl. the 15-page bench doc and hinted layouts; 4 adapter PDFs). The synthetic generator's lowercase glyphs were made realistic (x-height) first, and the "before" hashes were taken on that generator with the old layout code.
+- Also fixed: PDFium tests must stay in one test file. Two files make `dart test` load PDFium in parallel isolates, which crashed the VM (noted in `pdfium_test.dart`).
+- Benchmark: Mac M2 AOT 16.5 → **23.0 ms** per 15-page document (chunking). The emulator was not re-measured; the budget is 300 ms (it was 30-36 ms).
+- Limits: normal-size text drawn over a table still ends it (not an overlay). A page title more than 2× the body size becomes an overlay, which may matter if a pack's fingerprint uses a large bank name; packs should also read overlay blocks for anchors.
+
 ## Open items
 
 - **iOS/macOS Flutter apps still fetch PDFium via pdfium_flutter podspec. Must vendor + hash-pin before Finora iOS build.**
@@ -99,7 +111,7 @@ Soft budget < 300 ms on the emulator: met by about 8x. Layout only; PDF char ext
 - `pub get` and Gradle still fetch packages from the network at build time; only the PDFium fetch was removed.
 - Spike device run (SPIKE_REPORT section 4) still pending; also run the layout benchmark on the phone.
 - Ruled tables (TR1/TR3), font-size headings (LR6), and blank vs scanned need data pdfrx does not expose (path objects, fonts, images). Add them through pdfium_dart bindings when a real statement needs them.
-- Overprinted large text (stamps/watermarks) splits tables (Stage D finding).
+- ~~Overprinted large text splits tables~~: fixed in Phase 3b. Remaining: normal-size overprint, and big titles (> 2×) labelled overlay.
 - All layout thresholds are guesses tuned on synthetic Courier fixtures only. Phase 0 real statements will move them.
 
 ## Next phase (not started)

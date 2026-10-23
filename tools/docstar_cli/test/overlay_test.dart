@@ -22,6 +22,7 @@ List<FakeText> stmt() {
     ],
     const FakeText(50, 300, 'Closing note for the period.'),
     const FakeText(50, 812, 'Page footer'),
+    const FakeText(150, 190, 'DUPLICATE', size: 44, gray: 0.6),
   ];
 }
 

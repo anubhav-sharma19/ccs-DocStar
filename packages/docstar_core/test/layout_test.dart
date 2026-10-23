@@ -25,7 +25,14 @@ Map<String, List<PageInput>> corpus() => {
       'rot180': statement(pages: 2, turn: 180),
       'rot270': statement(pages: 2, turn: 270),
       'empty_page': [const PageInput(1, 595, 842, [])],
+      'stamp': statement(noise: false, extra: stamp),
+      'watermark': statement(pages: 2, extra: watermark),
+      'probe_on_row': statement(noise: false, extra: probe),
     };
+
+const stamp = [T(150, 200, 'DUPLICATE', size: 40)];
+const watermark = [T(60, 330, 'CONFIDENTIAL COPY', size: 14, slope: 0.6)];
+const probe = [T(140, 176, 'PROBE-ALPHA', size: 15)]; // same baseline as row 4, 1.5x the font
 
 void main() {
   group('(a) every char lands in exactly one word', () {
@@ -210,6 +217,46 @@ void main() {
       final doc = layout([page(1, texts)], hints: const TableHints(sectionTitles: ['International Transactions']));
       final labels = doc.pages.single.blocks.map((b) => b.label).toList();
       expect(labels, [BlockLabel.table, BlockLabel.sectionHeader, BlockLabel.table]);
+    });
+  });
+
+  group('overlay: stamps and watermarks never enter tables', () {
+    final clean = onlyTable(layout(statement(noise: false)));
+    List<String> overlays(DsDocument d) =>
+        [for (final b in d.pages.first.blocks) if (b.label == BlockLabel.overlay) b.lines.map((l) => l.text).join(' ')];
+    for (final (name, extra) in [
+      ('rule 1: large DUPLICATE stamp across the table', stamp),
+      ('rule 2: slanted watermark across the table', watermark),
+      ('rule 3: 1.5x label overprinted on a row baseline', probe),
+    ]) {
+      test(name, () {
+        final doc = layout(statement(noise: false, extra: extra));
+        expect(onlyTable(doc).cells.map((c) => c.text), clean.cells.map((c) => c.text));
+        expect(overlays(doc), [extra.single.s]);
+      });
+    }
+    test('rule 1 alone: a DUPLICATE stamp below the table (outside any table) is an overlay', () {
+      final doc = layout(statement(noise: false, extra: const [T(150, 600, 'DUPLICATE', size: 40)]));
+      expect(overlays(doc), ['DUPLICATE']);
+    });
+    test('overlay words keep provenance and are in page.words', () {
+      final doc = layout(statement(noise: false, extra: stamp));
+      final block = doc.pages.single.blocks.singleWhere((b) => b.label == BlockLabel.overlay);
+      final ids = {for (final w in doc.pages.single.words) w.id};
+      expect(block.lines.single.words.single.charIndices, hasLength(9));
+      expect(ids.containsAll(block.lines.single.words.map((w) => w.id)), isTrue);
+    });
+    test('control: a slightly taller (1.15x) header row is not an overlay', () {
+      final doc = layout(statement(noise: false, headerSize: 11.5));
+      expect(overlays(doc), isEmpty);
+      expect(onlyTable(doc).rowTexts(0), ['Date', 'Description', 'Debit', 'Credit', 'Balance']);
+    });
+    test('negative: a large title above the table stays a text block', () {
+      final doc = layout(statement(noise: false, extra: const [T(50, 80, 'ACCOUNT STATEMENT', size: 16)]));
+      expect(overlays(doc), isEmpty);
+      expect(doc.pages.single.blocks.where((b) => b.label == BlockLabel.text).map((b) => b.lines.first.text),
+          contains('ACCOUNT STATEMENT'));
+      expect(onlyTable(doc).cells.map((c) => c.text), clean.cells.map((c) => c.text));
     });
   });
 

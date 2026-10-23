@@ -15,6 +15,7 @@ final colors = <String, img.ColorRgba8>{
   'blocks': img.ColorRgba8(255, 140, 0, 255), // orange, 2 px, 3 pt outside
   'header/footer': img.ColorRgba8(160, 60, 200, 255), // purple: page furniture blocks
   'table grid': img.ColorRgba8(230, 0, 40, 255), // red, 2 px, 2 pt outside: one rectangle per cell
+  'overlay': img.ColorRgba8(128, 128, 128, 255), // grey: stamp/watermark blocks
 };
 
 /// Writes `page_<n>.png` for every page into [dir]; returns the paths.
@@ -47,8 +48,12 @@ Future<List<String>> drawOverlays(PdfDocument pdf, DsDocument doc, String dir) a
         box(l.box, 'lines', pad: 1);
       }
       for (final b in page.blocks) {
-        final furniture = b.label == BlockLabel.pageHeader || b.label == BlockLabel.pageFooter;
-        box(b.box, furniture ? 'header/footer' : 'blocks', pad: 3, px: 2);
+        final kind = switch (b.label) {
+          BlockLabel.pageHeader || BlockLabel.pageFooter => 'header/footer',
+          BlockLabel.overlay => 'overlay',
+          _ => 'blocks',
+        };
+        box(b.box, kind, pad: 3, px: 2);
         if (b.table != null) _grid(b.table!, (r) => box(r, 'table grid', pad: 2, px: 2));
       }
       _legend(canvas);

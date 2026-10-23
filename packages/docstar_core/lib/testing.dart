@@ -5,24 +5,33 @@
 // space after every separately placed text run. No real data.
 library;
 
+import 'dart:math' as math;
+
 import 'docstar_core.dart';
 
 const adv = 6.0;
 
 /// Text whose baseline starts at (x, y) in the upright (reading) frame.
+/// [size] in points (glyphs scale with it; 10 = the default Courier-like 6 pt advance).
+/// [slope]: baseline rise per unit of run (0 = horizontal; 1 = a 45 degree watermark).
 class T {
   final double x, y;
   final String s;
-  const T(this.x, this.y, this.s);
+  final double size, slope;
+  const T(this.x, this.y, this.s, {this.size = 10, this.slope = 0});
 }
 
 /// Right-aligned text ending at [right].
 T r(double right, double y, String s) => T(right - s.length * adv, y, s);
 
-Box _glyph(String c, double x, double y) => switch (c) {
-      ',' || '.' => Box(x + 2, y - 2, x + 4, y + 1),
-      ' ' => Box(x, y, x + adv, y),
-      _ => Box(x + 0.5, y - 7, x + 5.5, y),
+/// Tight glyph box like PDFium's: caps/digits/ascenders 0.7 em, plain lowercase
+/// 0.5 em (x-height), descenders reach 0.2 em below the baseline.
+Box _glyph(String c, double x, double y, double k) => switch (c) {
+      ',' || '.' => Box(x + 2 * k, y - 2 * k, x + 4 * k, y + k),
+      ' ' => Box(x, y, x + adv * k, y),
+      _ when 'acemnorsuvwxz'.contains(c) => Box(x + 0.5 * k, y - 5 * k, x + 5.5 * k, y),
+      _ when 'gpqy'.contains(c) => Box(x + 0.5 * k, y - 5 * k, x + 5.5 * k, y + 2 * k),
+      _ => Box(x + 0.5 * k, y - 7 * k, x + 5.5 * k, y),
     };
 
 /// One page. [turn] rotates the text in the display frame (0/90/180/270), as a
@@ -30,11 +39,12 @@ Box _glyph(String c, double x, double y) => switch (c) {
 PageInput page(int number, List<T> texts, {double w = 595, double h = 842, int turn = 0}) {
   final chars = <CharCell>[];
   for (final t in texts) {
+    final k = t.size / 10, step = adv * k / math.sqrt(1 + t.slope * t.slope);
     for (var i = 0; i < t.s.length; i++) {
-      chars.add(CharCell(chars.length, t.s[i], _glyph(t.s[i], t.x + i * adv, t.y)));
+      chars.add(CharCell(chars.length, t.s[i], _glyph(t.s[i], t.x + i * step, t.y - i * step * t.slope, k)));
     }
-    final end = t.x + t.s.length * adv;
-    chars.add(CharCell(chars.length, ' ', Box(end, t.y, end, t.y))); // generated space
+    final ex = t.x + t.s.length * step, ey = t.y - t.s.length * step * t.slope;
+    chars.add(CharCell(chars.length, ' ', Box(ex, ey, ex, ey))); // generated space
   }
   if (turn == 0) return PageInput(number, w, h, chars);
   final dw = turn == 180 ? w : h, dh = turn == 180 ? h : w; // displayed size
@@ -73,6 +83,8 @@ List<PageInput> statement({
   bool noise = true,
   int turn = 0,
   double headlessShift = 0,
+  List<T> extra = const [], // drawn last on page 1 (stamps, watermarks)
+  double headerSize = 10,
 }) {
   final out = <PageInput>[];
   var row = 0;
@@ -87,11 +99,11 @@ List<PageInput> statement({
     final shift = p > 1 ? headlessShift : 0.0;
     if (p == 1 || repeatHeader) {
       texts.addAll([
-        const T(xDate, 120, 'Date'),
-        const T(xDesc, 120, 'Description'),
-        r(rDebit, 120, 'Debit'),
-        r(rCredit, 120, 'Credit'),
-        r(rBal, 120, 'Balance'),
+        T(xDate, 120, 'Date', size: headerSize),
+        T(xDesc, 120, 'Description', size: headerSize),
+        T(rDebit - 5 * adv * headerSize / 10, 120, 'Debit', size: headerSize),
+        T(rCredit - 6 * adv * headerSize / 10, 120, 'Credit', size: headerSize),
+        T(rBal - 7 * adv * headerSize / 10, 120, 'Balance', size: headerSize),
       ]);
       y = 134;
     } else {
@@ -120,6 +132,7 @@ List<PageInput> statement({
       }
       y += 14;
     }
+    if (p == 1) texts.addAll(extra);
     out.add(page(p, texts, turn: turn));
   }
   return out;

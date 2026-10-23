@@ -1,3 +1,5 @@
+// Keep every PDFium test in this one file: `dart test` runs files in parallel
+// isolates, and loading PDFium from two at once crashes the VM.
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -13,14 +15,14 @@ const password = 'Test1234'; // fake, fixture only
 final locked = File('test/fixtures/locked_1p.pdf').readAsBytesSync();
 
 /// A small statement-like page in display coordinates (Courier 10, 6 pt advance).
-List<FakeText> stmt({bool header = true}) {
+List<FakeText> stmt({bool header = true, double headerSize = 10, bool bold = false}) {
   FakeText r(double right, double y, String s) => FakeText(right - s.length * 6, y, s);
   return [
     if (header) ...[
-      const FakeText(50, 120, 'Date'),
-      const FakeText(130, 120, 'Description'),
-      r(400, 120, 'Amount'),
-      r(500, 120, 'Balance'),
+      FakeText(50, 120, 'Date', size: headerSize, bold: bold),
+      FakeText(130, 120, 'Description', size: headerSize, bold: bold),
+      FakeText(400 - 6 * 0.6 * headerSize, 120, 'Amount', size: headerSize, bold: bold),
+      FakeText(500 - 7 * 0.6 * headerSize, 120, 'Balance', size: headerSize, bold: bold),
     ],
     for (var i = 0; i < 6; i++) ...[
       FakeText(50, 134.0 + 14 * i, '0${i + 1}/06/2026'),
@@ -171,5 +173,55 @@ void main() {
     final bytes = buildPdf([FakePage(stmt()), FakePage(stmt(), rotate: 90, upright: false)]);
     final a = (await read(bytes)).toCanonicalJson();
     expect((await read(bytes)).toCanonicalJson(), a);
+  });
+
+  group('overlay (stamps, watermarks) through PDFium', () {
+    List<String> overlays(DsDocument d) => [
+          for (final p in d.pages)
+            for (final b in p.blocks)
+              if (b.label == BlockLabel.overlay) b.lines.map((l) => l.text).join(' ')
+        ];
+    List<String> cellTexts(DsDocument d) => [for (final t in d.tables) for (final c in t.cells) c.text];
+    Future<DsDocument> spike(String name) async => read(File('test/fixtures/$name.pdf').readAsBytesSync());
+
+    test('spike plain_1p.pdf: exactly 1 table; PROBE-ALPHA/BETA are overlays, no PROBE in any cell', () async {
+      final doc = await spike('plain_1p');
+      expect(doc.tables, hasLength(1));
+      expect(overlays(doc), ['PROBE-ALPHA', 'PROBE-BETA']);
+      expect(cellTexts(doc).where((t) => t.contains('PROBE')), isEmpty);
+    });
+
+    test('spike ten_pages.pdf: exactly 10 tables, PROBE labels never in cells', () async {
+      final doc = await spike('ten_pages');
+      expect(doc.tables, hasLength(10));
+      expect(overlays(doc).where((t) => t.startsWith('PROBE')), hasLength(20));
+      expect(cellTexts(doc).where((t) => t.contains('PROBE')), isEmpty);
+    });
+
+    late List<String> clean;
+    setUpAll(() async => clean = cellTexts(await read(buildPdf([FakePage(stmt())]))));
+
+    test('(a) large DUPLICATE stamp across the table', () async {
+      final doc = await read(buildPdf([
+        FakePage([...stmt(), const FakeText(150, 190, 'DUPLICATE', size: 44, gray: 0.6)])
+      ]));
+      expect(cellTexts(doc), clean);
+      expect(overlays(doc), ['DUPLICATE']);
+    });
+
+    test('(b) diagonal light watermark across the page', () async {
+      final doc = await read(buildPdf([
+        FakePage([...stmt(), const FakeText(60, 400, 'SAMPLE COPY - NOT VALID', size: 12, angle: 35, gray: 0.85)])
+      ]));
+      expect(cellTexts(doc), clean);
+      expect(overlays(doc), ['SAMPLE COPY - NOT VALID']);
+    });
+
+    test('(c) control: bold, slightly taller header is a normal header row', () async {
+      final doc = await read(buildPdf([FakePage(stmt(headerSize: 11.5, bold: true))]));
+      expect(overlays(doc), isEmpty);
+      expect(doc.tables.single.rowTexts(0), ['Date', 'Description', 'Amount', 'Balance']);
+      expect(cellTexts(doc).skip(4), clean.skip(4));
+    });
   });
 }

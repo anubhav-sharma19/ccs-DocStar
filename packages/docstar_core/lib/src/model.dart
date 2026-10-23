@@ -79,7 +79,9 @@ class Line {
       {'id': id, 'text': text, 'box': box.toJson(), 'words': [for (final w in words) w.id]};
 }
 
-enum BlockLabel { text, sectionHeader, table, pageHeader, pageFooter }
+/// [overlay]: stamp or watermark text (larger font, slanted, or over a table). Kept
+/// with full provenance, but never part of a table, a cell or a text block.
+enum BlockLabel { text, sectionHeader, table, pageHeader, pageFooter, overlay }
 
 enum TableMethod { headerAnchored, whitespace }
 
