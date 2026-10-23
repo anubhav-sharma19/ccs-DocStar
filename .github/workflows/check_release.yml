@@ -21,6 +21,10 @@ jobs:
       - uses: android-actions/setup-android@v3
       - name: Install build-tools and NDK
         run: sdkmanager "build-tools;36.0.0" "ndk;28.2.13676358" "platforms;android-36"
+      - name: docstar_core tests
+        run: cd packages/docstar_core && dart pub get && dart test
+      - name: docstar_pdfium tests (macOS arm64, vendored PDFium)
+        run: cd packages/docstar_pdfium && dart pub get && dart test
       - name: Zero-network release guard
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358

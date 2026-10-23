@@ -1,0 +1,13 @@
+name: docstar_core
+description: DocStar core. Pure Dart, zero runtime dependencies. Chars with boxes -> words, lines, blocks, tables, reading order.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+
+# Runtime dependencies must stay empty (test/hygiene_test.dart enforces it).
+
+dev_dependencies:
+  crypto: ^3.0.7
+  test: ^1.25.0

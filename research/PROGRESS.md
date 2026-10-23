@@ -9,8 +9,8 @@
 | 2 — Pack logic from statement parsers | DONE |
 | 3 — Final engine spec | **DONE** (`research/ENGINE_SPEC.md`) |
 | A — Rename to DocStar + spike conditions C2/C3 | **DONE** (2026-10-23) |
-| B — Core design note | **DONE, awaiting approval** (`docs/CORE_DESIGN.md`) |
-| C — Core + tests | not started |
+| B — Core design note | **DONE** (approved 2026-10-23 with additions) |
+| C — Core + tests | **DONE** (2026-10-23) |
 | D — Visual debug CLI | not started |
 
 Research phase complete. **All pack rules are hypotheses** until validated on real statements (Phase 0).
@@ -49,12 +49,49 @@ Still-open technical gaps: Stage 1 G3 (`sanitize_text`), G4 (`_sort_cells`), G6 
 - Verified locally: check_release PASS; it fails as expected with INTERNET added, with the CLI override removed, and with no NDK or no ANDROID_HOME. Network-symbol regex confirmed on NDK libc. CLI extracts 30,864 chars from the 10-page fake. The release APK on the arm64 emulator gives all 8 self-test digests identical to `spike_metrics_emulator.json`.
 - Not verified: the x86_64 and armeabi-v7a `.so` files at runtime (packaged and hash-checked only; the Apple-silicon emulator is arm64). The 3-ABI release APK is 67.4 MB (unsplit, unshrunk; a Play bundle delivers one ABI).
 
+## Stage C: core + adapter + tests (done 2026-10-23)
+
+- `packages/docstar_core` (zero runtime deps): layout pipeline, model, canonical JSON, Pack/Verify interfaces, §1.5.3 decision table, import gate. `package:docstar_core/testing.dart` holds the synthetic fixture generator (tests, benchmark, later packs).
+- `packages/docstar_pdfium`: `readPdf(bytes, passwords:)` over pdfrx_engine, display-frame boxes rounded to 0.01 pt, `ReadFailed{corrupt, cancelled, noTextLayer}`. Its lockfile is now in the `check_release.sh` guard. CI also runs both test suites.
+- **Tests: 69, all pass.** docstar_core 52: (a) char→word on 9 fixtures; (b) determinism incl. shuffled input; (c) rotation 90/180/270; tables, continuation after/before, headless links, furniture, detection, gate, hygiene. docstar_pdfium 17: generated PDFs through real PDFium, plus the spike's locked fake.
+- Mutation check: breaking rotation detection, explicit-space splitting or the `before` direction each fails tests. The explicit-space mutation first survived, so a narrow-space test was added.
+
+| Scenario (§6.1) | Status |
+|---|---|
+| A-C1 open, boxes inside page | met (adapter test) |
+| A-C2/A-C3/A-C4 password flow | met (locked AES-256 fake: attempt 0 → wrong → attempt 1 → open; cancel; no password in the result) |
+| A-C5 remembered password | met as an app-side pattern test (saved answers attempt 0, the user answers after) |
+| A-C6 scanned | met: image-only PDF → `noTextLayer`. Limit: a blank PDF gives the same result (pdfrx exposes no image info) |
+| A-C7 determinism | met in-process (core + adapter). **Not met: "two devices"** for the document model. Only the spike's char digests were compared across Mac/emulator earlier |
+| A-C8 rotation | met: core (synthetic) and adapter (/Rotate 90/180/270, upright and sideways). PDFium orders the char stream differently on upside-down pages, so the adapter test compares structure without stream indices |
+| A-C9 no network | met by `check_release.sh` + the zero-dependency test. Airplane mode not literally run |
+| A-C10 money exact | core half met (`1,23,456.78` one word/cell); paise moves to the first pack (decided) |
+| A-C11 unknown document | met: decision table with zero packs and a fake pack |
+| A-C12 header/footer | met |
+| A-C13 log hygiene | met: no print/log in either lib (source scan); failures carry only an enum |
+
+**Found and fixed during Stage C (design note updated):**
+1. Docling's 0.35 × advance word-gap rule does not apply to PDFium's tight glyph boxes. Words break on stream whitespace first, with a 1-pitch geometric fallback.
+2. Transaction rows near the bottom edge were labelled page footers (X-HDRFTR). Table rows are now never furniture, and furniture must stack from the edge.
+3. Tight right-aligned columns made TR5 merge credit and balance and ended tables early. A known header row now splits columns, and straddling segments are checked word by word.
+
+**Benchmark (non-gating)**, `layoutBench()`: 15 pages, 34,662 chars, 15 tables, 615 rows, 20 runs after 5 warm-ups.
+
+| Where | Build | Median per document |
+|---|---|---|
+| Mac M2 | `dart compile exe` (AOT) | 16.4-16.7 ms (min 16.1, max 17.5) |
+| Android 16 arm64 emulator | spike app, Flutter release, `--dart-define=BENCH=1` | 30.0-36.0 ms (min 22.4, max 66.0) |
+
+Soft budget < 300 ms on the emulator: met by about 8x. Layout only; PDF char extraction (spike: 51-82 ms per 10 pages) is separate. A phone run is still pending.
+
 ## Open items
 
 - **iOS/macOS Flutter apps still fetch PDFium via pdfium_flutter podspec. Must vendor + hash-pin before Finora iOS build.**
 - `http` is still in the dependency graph via `pdfrx_engine` (URL-open code, not linked in release; spike item 7). Fork `pdfrx_engine` only if we want it out of the graph.
 - `pub get` and Gradle still fetch packages from the network at build time; only the PDFium fetch was removed.
-- Spike device run (SPIKE_REPORT section 4) still pending.
+- Spike device run (SPIKE_REPORT section 4) still pending; also run the layout benchmark on the phone.
+- Ruled tables (TR1/TR3), font-size headings (LR6), and blank vs scanned need data pdfrx does not expose (path objects, fonts, images). Add them through pdfium_dart bindings when a real statement needs them.
+- All layout thresholds are guesses tuned on synthetic Courier fixtures only. Phase 0 real statements will move them.
 
 ## Next phase (not started)
 

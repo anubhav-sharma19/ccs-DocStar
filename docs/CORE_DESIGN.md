@@ -1,6 +1,6 @@
 # DocStar core design (Stage B)
 
-Status: proposal for approval. Source of truth for rules: `research/ENGINE_SPEC.md` (cited as §). Values marked **guess** are the spec's starting values, to be tuned on fixtures, not facts.
+Status: approved 2026-10-23 with additions (continuation direction, headless page links, benchmark); updated after a PDFium probe (§3 steps 3, 6). Source of truth for rules: `research/ENGINE_SPEC.md` (cited as §). Values marked **guess** are the spec's starting values, to be tuned on fixtures, not facts.
 
 ## 1. Packages
 
@@ -13,7 +13,7 @@ No packs in this stage. `docstar_pdfium`'s own pubspec carries the `pdfium_dart`
 
 ## 2. Adapter (`docstar_pdfium`)
 
-- `Future<ReadResult> readPdf(String path, {PasswordProvider? passwords})`. Result is `ReadOk(List<PageInput>)` or `ReadFailed(state)` with state `corrupt`, `cancelled`, `noTextLayer` (§1.2).
+- `Future<ReadResult> readPdf(Uint8List bytes, {PasswordProvider? passwords})`. The caller runs `pdfrxInitialize()` once (pure Dart) or the Flutter equivalent. Result is `ReadOk(List<PageInput>)` or `ReadFailed(state)` with state `corrupt`, `cancelled`, `noTextLayer` (§1.2).
 - `typedef PasswordProvider = Future<String?> Function(int attempt)`. Attempt 0 means `LOCKED`, attempt > 0 means the previous one was `WRONG_PASSWORD`, and `null` means cancel. The engine tries the empty password first and never stores, logs or puts the password in an exception (§1.7). This is built on pdfrx's repeating callback.
 - It converts each char box from PDFium's unrotated frame (relative to the crop box) to the **display frame**: points, top-left origin, using the spike's table (`SPIKE_REPORT.md` item 2). Coordinates are rounded to 0.01 pt here so float noise across CPUs cannot change the output (ours).
 - `PageInput` = number, width, height, rotation, `List<CharCell>`. `CharCell` = page-local stream index, text, box. Whitespace chars are kept, since they act as explicit word breaks.
@@ -25,12 +25,12 @@ All steps are pure functions of `PageInput`s plus `LayoutConfig` plus optional `
 
 1. **Reading frame.** Detect each page's text direction from consecutive in-word chars (vote across 0/90/180/270; ties go to 0). Rotate the page's chars so text runs left-to-right and top-to-bottom. The page records `readingRotation`, so boxes can be mapped back for overlays. This is what makes a sideways page give the same structure (ours; the spike showed rotated fixtures keep text vertical in the display frame).
 2. **Lines.** Group chars into visual lines by vertical overlap, sorted by x (docling-parse "line runs").
-3. **Words.** Within a line, start a new word at an explicit space, a non-overlapping baseline band, or a normalised gap > `min(0.35, inferred)` (docling `cells.h:897-944`). Normalised gap = gap / average char width. Each word keeps its **char indices**.
-4. **Blocks.** LR2: start a new block when the line gap > 1.5 × median line height or the left edge jumps > 1 char width. LR4: lines in the top or bottom 8% whose text (digits → `#`) repeats on ≥ 2 pages become `pageHeader` / `pageFooter`.
+3. **Words.** Within a line, start a new word when the stream holds only whitespace between two neighbouring glyphs (PDFium inserts spaces and `\r\n` between separately placed runs; real spaces have width), or when the gap > 1.0 × **pitch**. Pitch is the page's median left-to-left distance of stream-adjacent glyphs, which is about one character advance. It is the length unit for every rule below. This replaces docling's `min(0.35, inferred)` × advance rule (`cells.h:897-944`): PDFium gives tight glyph boxes, not advances, so gaps inside amounts (`1,23,456.78`) are about 0.5 of a glyph width (probe, 2026-10-23). Each word keeps its **char indices**.
+4. **Blocks.** LR2: start a new block when the line gap > 1.5 × median line height or the left edge jumps > 1 char width. LR4: lines in the top or bottom 8% whose text (digits → `#`) repeats on ≥ 2 pages become `pageHeader` / `pageFooter`. Two guards (X-HDRFTR negative rule): a line with ≥ 3 segments (a table row) is never furniture, and furniture must be an unbroken stack from the page edge. Without them, transaction rows near the bottom were labelled footers (found by the benchmark fixture).
 5. **Table regions.** LR3(b): ≥ 3 consecutive lines sharing ≥ 3 x-columns, or a match of the hint header words (LR3(c)). Lines whose words sit inside existing columns (wrapped text) do not break the region.
-6. **Columns.** TR4 header-anchored when hints are given, otherwise TR5: an x-gap > 1.5 char widths present in ≥ 80% of rows. A column whose right edges align tighter than its left edges is right-aligned (amounts) and is bounded by the header's right edge.
-7. **Rows + grid.** TR2: a new row starts at a line matching `hints.rowStart` (a pack's date pattern). Without hints, a line with an empty first column continues the row above (direction `after`, the spec default). Words go to cells by > 30% own-area overlap; a straddling word goes to the column holding its centre (TR6). Empty cells are emitted with text `""`. No spanning cells (TR7).
-8. **Multi-page tables.** A table whose header row text equals the previous page's table header is linked (`continuesFrom`). That header row is marked `repeatedHeader`.
+6. **Columns.** A line splits into segments at gaps > 1.5 pitch. TR5: columns are the x-ranges covered by more than 20% of the table's multi-segment lines (a separator is a gap present in ≥ 80% of them). This handles right-aligned and ragged columns without knowing alignment. With hints (TR4 header-anchored), the header line's segments must match `headerWords`, and coverage columns are merged so each holds exactly one header word. Without hints, the table's first line is its header row if it has no digit (**guess**). When a header row is known, a coverage column holding two header segments is split at its least-covered x between them. Tight amount columns (a long credit 8 pt from the balance) merge under TR5 alone. Inside a table run, a segment that straddles two columns is accepted when each of its words sits in one column.
+7. **Rows + grid.** TR2: a new row starts at a line matching `hints.rowStart` (a pack's date pattern). Without hints, a line with an empty first column is a continuation line. `hints.continuation` decides where it goes: `after` (default) joins the row above; `before` (IDFC First: description lines sit above the date line) joins the next row, and leftovers at the table's end join the last row. Lines in a cell join top to bottom with one space. Words go to cells by > 30% own-area overlap; a straddling word goes to the column holding its centre (TR6). Empty cells are emitted with text `""`. No spanning cells (TR7).
+8. **Multi-page tables.** A page's first table links to the previous page's last table (`continuesFrom`) when (a) its header row text equals that table's header (the row is marked `repeatedHeader`), or (b) it is **headless**: no header row, the same column count, every column's left or right edge within 1 pitch of the previous one's (**guess**), and its top in the page's top 25% after page headers (**guess**). A headless run at the top of a page is accepted as a table even with fewer than `tableMinLines` lines when it matches like this.
 9. **Reading order.** Page headers, then body blocks by (top, left), then footers; pages ascending. Docling's dilation and column ordering (`reading_order_rb.py`) is not ported. Statements are single-flow; port it when multi-column prose appears.
 
 **Determinism.** Dart's `List.sort` is not stable, so every sort has a full tie-break ending in char index. There are no clocks, randomness, hashes of identity, or `Map` iteration over unsorted keys. Output is canonical JSON (fixed key order, coordinates at 0.01 pt).
@@ -43,7 +43,8 @@ All steps are pure functions of `PageInput`s plus `LayoutConfig` plus optional `
 
 ```dart
 DsDocument layout(List<PageInput> pages, {LayoutConfig config = const LayoutConfig(), TableHints? hints});
-class TableHints { List<String> headerWords; RegExp? rowStart; List<String> sectionTitles; }
+enum Continuation { after, before }
+class TableHints { List<String> headerWords; RegExp? rowStart; Continuation continuation = after; List<String> sectionTitles; }
 abstract interface class Pack<R> {           // implemented by packs later; none now
   String get id;
   Detection detect(DsDocument doc);          // strong/weak anchor hits, negative anchor fired (§1.5.3)
@@ -60,12 +61,14 @@ Flow later: `layout(no hints)` → `detect` → `layout(hintsFor(variant))` → 
 
 | Field | Default | Source |
 |---|---|---|
-| `wordGapCap` | 0.35 × avg char width | docling code |
+| `wordGapPitch` | 1.0 pitch (geometric fallback; explicit spaces decide first) | **guess** (replaces docling 0.35 × advance, see §3.3) |
 | `lineOverlap` | 0.5 of the smaller height | docling pypdfium2 0.5 (adapted) |
 | `blockGapFactor`, `blockIndentChars` | 1.5, 1.0 | **guess** LR2 |
 | `tableMinLines`, `tableMinCols` | 3, 3 | **guess** LR3 |
 | `headerFooterBand`, `headerFooterMinPages` | 0.08, 2 | **guess** LR4 |
-| `colGapChars`, `colGapRowShare` | 1.5, 0.8 | **guess** TR5 |
+| `colGapPitch`, `colGapRowShare` | 1.5, 0.8 | **guess** TR5 |
+| `tableMaxGapLines`, `continuationGapLines` | 3.0, 1.0 line heights | **guess**; 1.0 from X-CONT |
+| `headlessTolerancePitch`, `headlessTopBand` | 1.0, 0.25 | **guess** (your item 2) |
 | `cellOverlap` | 0.3 | docling code |
 | `coordQuantum` | 0.01 pt | **guess** (ours) |
 
@@ -77,4 +80,6 @@ Q3 remember-password off: app concern, the engine never stores. Q4 tolerance 0: 
 
 Met by tests: A-C1, A-C2, A-C3, A-C4 (spike's generated locked fixture), A-C6, A-C7 (in-process + macOS; the second device is the spike app run), A-C8, A-C12, A-C13 (core has no logging; a test scans the sources). A-C5: the provider is app-side; tested with a fake "remembered" provider. A-C9: `check_release.sh` + a test that `docstar_core` has no dependencies.
 
-**Need your call:** A-C10 (`1,23,456.78` → paise) is money, which the core must not know. My default: the core test asserts the amount stays one intact word/cell, and the paise half moves to the first pack. A-C11 (`UNKNOWN_FORMAT`) needs detection. My default: implement the §1.5.3 decision table in core (generic, no money) and test it with zero packs and a test-only fake pack.
+**Decided (2026-10-23):** A-C10 (`1,23,456.78` → paise) is money, which the core must not know. The core test asserts the amount stays one intact word/cell; the paise half moves to the first pack. A-C11 (`UNKNOWN_FORMAT`): the §1.5.3 decision table is in core, tested with zero packs and a test-only fake pack.
+
+**Benchmark (non-gating):** `benchmark/layout_bench.dart` lays out a generated 15-page statement-like document. Timings for Mac and the emulator release build go in `research/PROGRESS.md`. Soft budget: < 300 ms on the emulator.

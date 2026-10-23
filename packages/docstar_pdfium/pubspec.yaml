@@ -1,0 +1,20 @@
+name: docstar_pdfium
+description: DocStar reader adapter over pdfrx_engine (PDFium). Per-char boxes in display frame, password callback.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  docstar_core:
+    path: ../docstar_core
+  pdfrx_engine: 0.8.0
+
+dev_dependencies:
+  test: ^1.25.0
+
+# Vendored, hash-pinned PDFium (no build-time download). Required in every root app; see README "Using DocStar".
+dependency_overrides:
+  pdfium_dart:
+    path: ../../third_party/pdfium_dart

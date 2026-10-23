@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:docstar_core/testing.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -14,7 +15,17 @@ import 'spike.dart';
 
 const _autorun = String.fromEnvironment('AUTORUN');
 
-void main() => runApp(const MaterialApp(home: SpikePage()));
+const _bench = String.fromEnvironment('BENCH');
+
+void main() {
+  // DocStar core layout benchmark (release build: --dart-define=BENCH=1). Synthetic data only.
+  if (_bench == '1') {
+    for (var i = 0; i < 3; i++) {
+      debugPrint('DOCSTAR_BENCH ${layoutBench()}');
+    }
+  }
+  runApp(const MaterialApp(home: SpikePage()));
+}
 
 class SpikePage extends StatefulWidget {
   const SpikePage({super.key});

@@ -5,6 +5,9 @@ Universal CalmCraft document engine (Dart package `docstar`): offline, determini
 | Path | What |
 |---|---|
 | `research/` | Specs (`ENGINE_SPEC.md`), rule register, progress (`PROGRESS.md`) |
+| `docs/CORE_DESIGN.md` | Core design (approved) |
+| `packages/docstar_core/` | Pure-Dart core: chars → words, lines, blocks, tables, reading order; Pack/Verify interfaces. Zero runtime deps |
+| `packages/docstar_pdfium/` | Reader adapter over pdfrx_engine: per-char boxes (display frame), password callback |
 | `spikes/pdfrx_spike/` | Throwaway Android spike app (pdfrx_engine on Android) |
 | `spikes/pdfrx_cli/` | Throwaway macOS CLI spike (batch metrics on local PDFs) |
 | `third_party/pdfium/` | Vendored PDFium binaries, hash-pinned (`SHA256SUMS`) |
