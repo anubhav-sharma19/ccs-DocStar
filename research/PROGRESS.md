@@ -142,6 +142,14 @@ Soft budget < 300 ms on the emulator: met by about 8x. Layout only; PDF char ext
 - Fix: such lines join the continuing page's first table (headless page: lines just above the first row, top of page, within wrap spacing, inside one column; after a repeated header they were already a row). The first row is flagged `Table.continuesRow` (JSON `continuesRow: true`, only when set). `transformed.json` `logical_tables` merges it into the previous page's last row.
 - Tests: headless and repeated-header pages with a carried-over line (flag and row), negative (a note two blank lines above the table stays text), logical-table merge (24 rows, narration joined). Turning off the prepend fails the test. Earlier fixture hashes unchanged. Tests: core 72, adapter 24, CLI 6.
 
+## CHECKPOINT 2026-10-23 (git tag `checkpoint-2026-10-23`)
+
+Done: Stages A-D, Phase 3b (overlays), concurrency guard, continuation spacing, transformed.json (`tables` + `logical_tables`, nulls), `--redact`, comma/sparse-column fixes, headless and sparse-column linking, stable columns per chain, `continuesRow` for narration over a page break. Tests: core 72, adapter 24, CLI 6; `check_release.sh` PASS.
+
+**Open bug (user-reported, NOT resolved):** on the user's test statement, a narration continued at the top of the next page is still dropped. Suspected cause, unconfirmed: every page repeats a page header and an account-info block (taller than the 8% furniture band, multi-column lines) plus the column header. That breaks one of: furniture detection, "first table on page", headerless/top-band conditions, or linking. Plan once confirmed: (1) furniture = lines repeated at the same position on every page, even below 8%, except the column-header row; (2) link to the page's table that MATCHES the previous one (header text/columns), not the first table; (3) attach carried lines to that table (above the first row or right after the repeated header).
+
+**Next step:** the user generates a fully synthetic hard statement with `research/synthetic_statement_prompt.md` (external model, reportlab, ground-truth `truth.json`) and shares the PDF. Then compare DocStar's `logical_tables` to `truth.json`, reproduce the bug on it, fix it, and commit the generator as a fixture.
+
 ## Open items
 
 - **iOS/macOS Flutter apps still fetch PDFium via pdfium_flutter podspec. Must vendor + hash-pin before Finora iOS build.**
