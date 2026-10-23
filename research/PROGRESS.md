@@ -1,4 +1,4 @@
-# ccs-docengine — Research Progress
+# DocStar — Research Progress
 
 ## Stage status
 
@@ -8,6 +8,10 @@
 | 1 — Core logic from Docling (PDF path) | DONE (+ pass 2) |
 | 2 — Pack logic from statement parsers | DONE |
 | 3 — Final engine spec | **DONE** (`research/ENGINE_SPEC.md`) |
+| A — Rename to DocStar + spike conditions C2/C3 | **DONE** (2026-10-23) |
+| B — Core design note | not started |
+| C — Core + tests | not started |
+| D — Visual debug CLI | not started |
 
 Research phase complete. **All pack rules are hypotheses** until validated on real statements (Phase 0).
 
@@ -35,7 +39,22 @@ Still-open technical gaps: Stage 1 G3 (`sanitize_text`), G4 (`_sort_cells`), G6 
 
 ## Phase 3 pre-spike (pdfrx on Android): done on emulator
 
-`spikes/pdfrx_spike/` (throwaway Flutter app) + `SPIKE_REPORT.md`. Result: **GO (conditional)**. Items 1-8: pass on emulator (items 1, 3, 5, 8 also need a phone run; steps in the report). Findings: char boxes are in the unrotated frame; PDFium binary downloaded at build time unchecked (vendor + pin hash); `http` is in the dependency tree via `pdfrx_engine` but not linked in release; APK +8.3 MB; extraction 51-82 ms per 10 pages on the emulator. Spike code is not committed yet.
+`spikes/pdfrx_spike/` (throwaway Flutter app) + `SPIKE_REPORT.md`. Result: **GO (conditional)**. Items 1-8: pass on emulator (items 1, 3, 5, 8 also need a phone run; steps in the report). Findings: char boxes are in the unrotated frame; PDFium binary downloaded at build time unchecked (vendor + pin hash); `http` is in the dependency tree via `pdfrx_engine` but not linked in release; APK +8.3 MB; extraction 51-82 ms per 10 pages on the emulator. Spike code is committed (`bdbcc22`).
+
+## Stage A: rename + spike conditions (done 2026-10-23)
+
+- Renamed `~/calmcraft/ccs-docengine` to `~/calmcraft/docstar` (git history kept). Engine name DocStar, Dart package `docstar`; Finora and Pocket Proof will consume it. The macOS CLI spike moved into the repo (`spikes/pdfrx_cli/`).
+- **C2 closed.** PDFium `chromium/7811` is vendored in `third_party/pdfium/chromium-7811/` (android-arm, android-arm64, android-x64, mac-arm64; about 24 MB, no LFS) with each archive's licences and `SHA256SUMS`. android-arm64 and mac-arm64 are byte-identical to the copies the spikes downloaded earlier; android-arm and android-x64 had no cached copy to compare against. `third_party/pdfium_dart/` is a patched fork of 0.4.0 (upstream commit `007415ec`). Its hook reads the vendored binary, checks SHA-256, fails on a mismatch, and never downloads; `http`/`archive` are dropped from the hook. The change is in `patches/pdfium_dart-0.4.0.patch` (verified to reproduce the fork from pristine 0.4.0), with steps in `patches/UPGRADING.md`. The spike and CLI use it through `dependency_overrides` (every root app needs this; README "Using DocStar").
+- **C3 closed.** `scripts/check_release.sh` (fails closed) checks vendored hashes, that both lockfiles resolve `pdfium_dart` to the fork, builds the spike's release APK (armeabi-v7a, arm64-v8a, x86_64), and checks for no `INTERNET` in the merged manifest or the APK. For each ABI it checks `libpdfium.so` in the APK is byte-identical to the vendored one with no socket/connect/getaddrinfo/gethostbyname/curl symbols, then runs `scripts/test_tamper.sh` (a 1-byte change must fail the build with `SHA-256 mismatch`). `.github/workflows/check_release.yml` runs it on macOS arm64 (no remote yet, so not run in CI).
+- Verified locally: check_release PASS; it fails as expected with INTERNET added, with the CLI override removed, and with no NDK or no ANDROID_HOME. Network-symbol regex confirmed on NDK libc. CLI extracts 30,864 chars from the 10-page fake. The release APK on the arm64 emulator gives all 8 self-test digests identical to `spike_metrics_emulator.json`.
+- Not verified: the x86_64 and armeabi-v7a `.so` files at runtime (packaged and hash-checked only; the Apple-silicon emulator is arm64). The 3-ABI release APK is 67.4 MB (unsplit, unshrunk; a Play bundle delivers one ABI).
+
+## Open items
+
+- **iOS/macOS Flutter apps still fetch PDFium via pdfium_flutter podspec. Must vendor + hash-pin before Finora iOS build.**
+- `http` is still in the dependency graph via `pdfrx_engine` (URL-open code, not linked in release; spike item 7). Fork `pdfrx_engine` only if we want it out of the graph.
+- `pub get` and Gradle still fetch packages from the network at build time; only the PDFium fetch was removed.
+- Spike device run (SPIKE_REPORT section 4) still pending.
 
 ## Next phase (not started)
 

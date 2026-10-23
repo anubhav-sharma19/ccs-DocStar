@@ -385,12 +385,11 @@ packages:
     source: hosted
     version: "2.3.0"
   pdfium_dart:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
-      name: pdfium_dart
-      sha256: e9f712166563540228e9ce7b8a515fcbd42ebd9d7c0925baa42c6b981f7e7900
-      url: "https://pub.dev"
-    source: hosted
+      path: "../../third_party/pdfium_dart"
+      relative: true
+    source: path
     version: "0.4.0"
   pdfium_flutter:
     dependency: "direct main"

@@ -1,0 +1,4 @@
+3d67be8a7f8a4f77e5a91530fbab69e0b27a8f4f4db5d4a0df512fbfaf40bd27  android-arm/libpdfium.so
+ef8c440d29e2a0820a65554487d23020bd88756ee2d6aad8f8fb59bab3b2eb14  android-arm64/libpdfium.so
+dd8c2880d41baf4c6406d5d2bf0c1beffe42b45e756ff08a9c612ad35d5a5c64  android-x64/libpdfium.so
+9f2b17bc233ee8ed2fa0fc794d39015f419bd22d8264c6bbb023365daa221fb5  mac-arm64/libpdfium.dylib

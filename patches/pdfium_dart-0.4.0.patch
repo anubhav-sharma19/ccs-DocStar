@@ -1,0 +1,657 @@
+diff --git a/hook/build.dart b/hook/build.dart
+index abfec5e..b2da013 100644
+--- a/hook/build.dart
++++ b/hook/build.dart
+@@ -1,13 +1,12 @@
+ import 'dart:io';
+ 
+-import 'package:archive/archive_io.dart';
+ import 'package:code_assets/code_assets.dart';
++import 'package:crypto/crypto.dart';
+ import 'package:hooks/hooks.dart';
+ import 'package:native_toolchain_c/native_toolchain_c.dart';
+ 
+-import '../lib/src/proxy_http_client.dart';
+-
+-const _pdfiumRelease = 'chromium%2F7811';
++// DocStar fork: PDFium is vendored in the repo and hash-pinned. No download.
++const _pdfiumRelease = 'chromium-7811';
+ const _assetName = 'libpdfium';
+ 
+ void main(List<String> args) async {
+@@ -27,16 +26,17 @@ void main(List<String> args) async {
+     if (input.config.code.targetOS == OS.iOS) return;
+ 
+     final target = _PdfiumTarget.fromCodeConfig(input.config.code);
+-    final outputSubdir = _pdfiumRelease.replaceAll('%2F', '_');
+-    final outputFile = input.outputDirectoryShared.resolve(
+-      '$outputSubdir/${target.archivePlatform}-${target.archiveArch}/${target.libraryFileName}',
+-    );
+-
+-    await _downloadPdfium(
+-      outputFile: outputFile,
+-      target: target,
+-      pdfiumRelease: _pdfiumRelease,
+-    );
++    final vendorDir = input.packageRoot.resolve('../pdfium/$_pdfiumRelease/');
++    final relPath =
++        '${target.archivePlatform}-${target.archiveArch}/${target.libraryFileName}';
++    final source = File.fromUri(vendorDir.resolve(relPath));
++    final sums = File.fromUri(vendorDir.resolve('SHA256SUMS'));
++    output.dependencies
++      ..add(source.uri)
++      ..add(sums.uri);
++
++    final outputFile = input.outputDirectory.resolve(target.libraryFileName);
++    await File.fromUri(outputFile).writeAsBytes(_verifiedPdfium(source, sums, relPath));
+ 
+     output.assets.code.add(
+       CodeAsset(
+@@ -49,38 +49,26 @@ void main(List<String> args) async {
+   });
+ }
+ 
+-Future<void> _downloadPdfium({
+-  required Uri outputFile,
+-  required _PdfiumTarget target,
+-  required String pdfiumRelease,
+-}) async {
+-  final output = File.fromUri(outputFile);
+-  if (await output.exists()) return;
+-
+-  final archiveUri = Uri.parse(
+-    'https://github.com/bblanchon/pdfium-binaries/releases/download/'
+-    '$pdfiumRelease/pdfium-${target.archivePlatform}-${target.archiveArch}.tgz',
+-  );
+-
+-  final response = await getWithRetries(archiveUri);
+-  if (response.statusCode != 200) {
+-    throw Exception(
+-      'Failed to download PDFium: HTTP ${response.statusCode} $archiveUri',
+-    );
++/// Returns the vendored binary's bytes, or throws (failing the build) if it is
++/// missing, not listed in SHA256SUMS, or its SHA-256 does not match.
++List<int> _verifiedPdfium(File source, File sums, String relPath) {
++  if (!sums.existsSync()) throw Exception('PDFium SHA256SUMS missing: ${sums.path}');
++  final expected = sums
++      .readAsLinesSync()
++      .map((l) => l.split(RegExp(r'\s+\*?')))
++      .where((f) => f.length == 2 && f[1] == relPath)
++      .map((f) => f[0].toLowerCase())
++      .firstOrNull;
++  if (expected == null) {
++    throw Exception('PDFium not vendored for this target: $relPath is not in ${sums.path}');
+   }
+-
+-  final archive = TarDecoder().decodeBytes(
+-    GZipDecoder().decodeBytes(response.bodyBytes),
+-  );
+-  final member = archive.findFile(target.archiveLibraryPath);
+-  if (member == null) {
+-    throw Exception(
+-      'PDFium archive $archiveUri does not contain ${target.archiveLibraryPath}.',
+-    );
++  if (!source.existsSync()) throw Exception('PDFium binary missing: ${source.path}');
++  final bytes = source.readAsBytesSync();
++  final actual = sha256.convert(bytes).toString();
++  if (actual != expected) {
++    throw Exception('PDFium SHA-256 mismatch for $relPath: expected $expected, got $actual');
+   }
+-
+-  await output.parent.create(recursive: true);
+-  await output.writeAsBytes(member.content as List<int>);
++  return bytes;
+ }
+ 
+ final class _PdfiumTarget {
+diff --git a/lib/src/proxy_http_client.dart a/lib/src/proxy_http_client.dart
+deleted file mode 100644
+index 2c9fb53..0000000
+--- a/lib/src/proxy_http_client.dart
++++ /dev/null
+@@ -1,235 +0,0 @@
+-import 'dart:ffi';
+-import 'dart:io';
+-
+-import 'package:ffi/ffi.dart';
+-import 'package:http/http.dart' as http;
+-import 'package:http/io_client.dart';
+-
+-typedef HttpClientFactory = Future<http.Client> Function();
+-
+-const _downloadRetryDelays = [
+-  Duration(seconds: 1),
+-  Duration(seconds: 2),
+-  Duration(seconds: 4),
+-];
+-
+-/// Creates an HTTP client using environment proxies and static OS proxy settings.
+-Future<http.Client> createProxyAwareHttpClient() async {
+-  final systemProxyEnvironment = Platform.isWindows
+-      ? loadWindowsProxyEnvironment()
+-      : Platform.isMacOS
+-      ? await _loadMacOSProxyEnvironment()
+-      : null;
+-  final client = HttpClient()
+-    ..findProxy = (url) =>
+-        findDownloadProxy(url, Platform.environment, systemProxyEnvironment);
+-  return IOClient(client);
+-}
+-
+-/// Resolves explicit environment settings before falling back to the OS settings.
+-String findDownloadProxy(
+-  Uri url,
+-  Map<String, String> environment,
+-  Map<String, String>? systemEnvironment,
+-) {
+-  if (_hasProxyForScheme(environment, url.scheme) ||
+-      systemEnvironment == null) {
+-    return HttpClient.findProxyFromEnvironment(url, environment: environment);
+-  }
+-  final bypass = systemEnvironment['no_proxy'] ?? '';
+-  for (final entry in bypass.split(',')) {
+-    if (entry == '<local>' &&
+-        !url.host.contains('.') &&
+-        !url.host.contains(':'))
+-      return 'DIRECT';
+-    if (entry.contains('*')) {
+-      final pattern = entry.split('*').map(RegExp.escape).join('.*');
+-      if (RegExp('^$pattern\$', caseSensitive: false).hasMatch(url.host))
+-        return 'DIRECT';
+-    }
+-  }
+-  return HttpClient.findProxyFromEnvironment(
+-    url,
+-    environment: {
+-      ...systemEnvironment,
+-      'no_proxy': [
+-        bypass,
+-        environment['no_proxy'] ?? environment['NO_PROXY'] ?? '',
+-      ].join(','),
+-    },
+-  );
+-}
+-
+-/// Gets [uri], retrying transient network and server failures with a fresh client.
+-Future<http.Response> getWithRetries(
+-  Uri uri, {
+-  HttpClientFactory clientFactory = createProxyAwareHttpClient,
+-  List<Duration> retryDelays = _downloadRetryDelays,
+-}) async {
+-  for (var attempt = 0; ; attempt++) {
+-    final client = await clientFactory();
+-    try {
+-      final response = await client.get(uri);
+-      if (!_isTransientStatus(response.statusCode) ||
+-          attempt == retryDelays.length) {
+-        return response;
+-      }
+-      stderr.writeln(
+-        'PDFium download returned HTTP ${response.statusCode}; retrying in ${retryDelays[attempt].inSeconds}s.',
+-      );
+-    } on http.ClientException catch (error) {
+-      if (attempt == retryDelays.length) rethrow;
+-      stderr.writeln(
+-        'PDFium download failed ($error); retrying in ${retryDelays[attempt].inSeconds}s.',
+-      );
+-    } on SocketException catch (error) {
+-      if (attempt == retryDelays.length) rethrow;
+-      stderr.writeln(
+-        'PDFium download failed ($error); retrying in ${retryDelays[attempt].inSeconds}s.',
+-      );
+-    } finally {
+-      client.close();
+-    }
+-    await Future<void>.delayed(retryDelays[attempt]);
+-  }
+-}
+-
+-bool _isTransientStatus(int statusCode) =>
+-    statusCode == HttpStatus.requestTimeout ||
+-    statusCode == HttpStatus.tooManyRequests ||
+-    statusCode >= HttpStatus.internalServerError;
+-
+-bool _hasProxyForScheme(Map<String, String> environment, String scheme) {
+-  return environment.containsKey('${scheme.toLowerCase()}_proxy') ||
+-      environment.containsKey('${scheme.toUpperCase()}_PROXY');
+-}
+-
+-/// The layout of WINHTTP_CURRENT_USER_IE_PROXY_CONFIG from winhttp.h.
+-final class _WindowsProxyConfig extends Struct {
+-  @Int32()
+-  external int autoDetect;
+-  external Pointer<Utf16> autoConfigUrl;
+-  external Pointer<Utf16> proxy;
+-  external Pointer<Utf16> proxyBypass;
+-}
+-
+-/// Reads the current user's static proxy for the active Windows connection.
+-Map<String, String>? loadWindowsProxyEnvironment() {
+-  final getConfig = DynamicLibrary.open('winhttp.dll')
+-      .lookupFunction<
+-        Int32 Function(Pointer<_WindowsProxyConfig>),
+-        int Function(Pointer<_WindowsProxyConfig>)
+-      >('WinHttpGetIEProxyConfigForCurrentUser');
+-  final globalFree = DynamicLibrary.open('kernel32.dll')
+-      .lookupFunction<
+-        Pointer<Void> Function(Pointer<Void>),
+-        Pointer<Void> Function(Pointer<Void>)
+-      >('GlobalFree');
+-  final config = calloc<_WindowsProxyConfig>();
+-  try {
+-    if (getConfig(config) == 0) return null;
+-    return parseWindowsProxySettings(
+-      config.ref.proxy == nullptr ? null : config.ref.proxy.toDartString(),
+-      config.ref.proxyBypass == nullptr
+-          ? null
+-          : config.ref.proxyBypass.toDartString(),
+-    );
+-  } finally {
+-    for (final value in [
+-      config.ref.autoConfigUrl,
+-      config.ref.proxy,
+-      config.ref.proxyBypass,
+-    ]) {
+-      if (value != nullptr) globalFree(value.cast());
+-    }
+-    calloc.free(config);
+-  }
+-}
+-
+-/// Converts static Windows proxy and bypass strings into HTTP client settings.
+-Map<String, String>? parseWindowsProxySettings(
+-  String? proxyServer, [
+-  String? proxyOverride,
+-]) {
+-  if (proxyServer == null || proxyServer.trim().isEmpty) return null;
+-  proxyServer = proxyServer.trim();
+-  final environment = <String, String>{};
+-  if (!proxyServer.contains('=')) {
+-    environment['http_proxy'] = proxyServer;
+-    environment['https_proxy'] = proxyServer;
+-  } else {
+-    for (final entry in proxyServer.split(';')) {
+-      final separator = entry.indexOf('=');
+-      if (separator <= 0 || separator == entry.length - 1) continue;
+-      final scheme = entry.substring(0, separator).trim().toLowerCase();
+-      if (scheme == 'http' || scheme == 'https') {
+-        environment['${scheme}_proxy'] = entry.substring(separator + 1).trim();
+-      }
+-    }
+-  }
+-
+-  if (proxyOverride != null && proxyOverride.isNotEmpty) {
+-    final bypass = proxyOverride
+-        .split(';')
+-        .map((value) => value.trim())
+-        .where((value) => value.isNotEmpty);
+-    environment['no_proxy'] = bypass.join(',');
+-  }
+-  return environment.isEmpty ? null : environment;
+-}
+-
+-Future<Map<String, String>?> _loadMacOSProxyEnvironment() async {
+-  try {
+-    final result = await Process.run('/usr/sbin/scutil', ['--proxy']);
+-    if (result.exitCode != 0) return null;
+-    return parseMacOSProxySettings(result.stdout as String);
+-  } on ProcessException {
+-    return null;
+-  }
+-}
+-
+-/// Parses global static proxies and exceptions from `scutil --proxy` output.
+-Map<String, String>? parseMacOSProxySettings(String output) {
+-  final values = <String, String>{};
+-  final exceptions = <String>[];
+-  var depth = 0;
+-  var inExceptions = false;
+-  for (final rawLine in output.split('\n')) {
+-    final line = rawLine.trim();
+-    if (line.endsWith('{')) {
+-      if (depth == 1 && line.startsWith('ExceptionsList :'))
+-        inExceptions = true;
+-      depth++;
+-      continue;
+-    }
+-    if (line == '}') {
+-      if (depth == 2) inExceptions = false;
+-      depth--;
+-      continue;
+-    }
+-    final match = RegExp(r'^(\S+)\s*:\s*(.*?)\s*$').firstMatch(line);
+-    if (match == null) continue;
+-    if (depth == 1) values[match[1]!] = match[2]!;
+-    if (depth == 2 && inExceptions) exceptions.add(match[2]!);
+-  }
+-  final environment = <String, String>{};
+-  for (final scheme in ['HTTP', 'HTTPS']) {
+-    if (values['${scheme}Enable'] != '1') continue;
+-    final host = values['${scheme}Proxy'];
+-    final port = int.tryParse(values['${scheme}Port'] ?? '');
+-    if (host == null ||
+-        host.isEmpty ||
+-        port == null ||
+-        port < 1 ||
+-        port > 65535)
+-      continue;
+-    final authority = host.contains(':') && !host.startsWith('[')
+-        ? '[$host]'
+-        : host;
+-    environment['${scheme.toLowerCase()}_proxy'] = '$authority:$port';
+-  }
+-  if (environment.isEmpty) return null;
+-  if (values['ExcludeSimpleHostnames'] == '1') exceptions.add('<local>');
+-  if (exceptions.isNotEmpty) environment['no_proxy'] = exceptions.join(',');
+-  return environment;
+-}
+diff --git a/pubspec.yaml b/pubspec.yaml
+index 726ad64..06f1b42 100644
+--- a/pubspec.yaml
++++ b/pubspec.yaml
+@@ -1,63 +1,61 @@
+-name: pdfium_dart
+-description: Dart FFI bindings for PDFium library. Provides low-level access to PDFium's C API from Dart.
++name: pdfium_dart
++description: Dart FFI bindings for PDFium library. Provides low-level access to PDFium's C API from Dart.
+ version: 0.4.0
+-homepage: https://github.com/espresso3389/pdfrx
+-repository: https://github.com/espresso3389/pdfrx/tree/master/packages/pdfium_dart
+-issue_tracker: https://github.com/espresso3389/pdfrx/issues
+-
+-environment:
+-  sdk: ^3.13.0
+-resolution: workspace
+-
+-dependencies:
+-  archive:
+-  code_assets:
+-  ffi:
+-  hooks:
+-  http:
+-  native_toolchain_c:
+-
+-dev_dependencies:
+-  ffigen:
+-  lints:
+-  test:
+-
+-# To generate the bindings, run:
+-#  dart tool/ffigen.dart
+-ffigen:
+-  output:
+-    bindings: "lib/src/pdfium_bindings.dart"
+-  description: "Bindings for PDFium C API"
+-  headers:
+-    entry-points:
+-      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_signature.h"
+-      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_sysfontinfo.h"
+-      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_javascript.h"
+-      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_text.h"
+-      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_searchex.h"
+-      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_progressive.h"
+-      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdfview.h"
+-      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_edit.h"
+-      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_attachment.h"
+-      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_annot.h"
+-      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_catalog.h"
+-      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_ppo.h"
+-      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_formfill.h"
+-      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_save.h"
+-      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_doc.h"
+-      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_structtree.h"
+-      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_dataavail.h"
+-      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_fwlevent.h"
+-      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_ext.h"
+-      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_transformpage.h"
+-      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_flatten.h"
+-      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_thumbnail.h"
+-    include-directives:
+-      - ".dart_tool/pdfium_headers/chromium_7811/include/**"
+-  preamble: |
+-    // ignore_for_file: unused_field
+-    // dart format off
+-  name: "PDFium"
+-  comments:
+-    style: any
+-    length: full
++homepage: https://github.com/espresso3389/pdfrx
++repository: https://github.com/espresso3389/pdfrx/tree/master/packages/pdfium_dart
++issue_tracker: https://github.com/espresso3389/pdfrx/issues
++
++environment:
++  sdk: ^3.13.0
++
++dependencies:
++  code_assets:
++  crypto:
++  ffi:
++  hooks:
++  native_toolchain_c:
++
++dev_dependencies:
++  ffigen:
++  lints:
++  test:
++
++# To generate the bindings, run:
++#  dart tool/ffigen.dart
++ffigen:
++  output:
++    bindings: "lib/src/pdfium_bindings.dart"
++  description: "Bindings for PDFium C API"
++  headers:
++    entry-points:
++      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_signature.h"
++      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_sysfontinfo.h"
++      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_javascript.h"
++      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_text.h"
++      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_searchex.h"
++      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_progressive.h"
++      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdfview.h"
++      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_edit.h"
++      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_attachment.h"
++      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_annot.h"
++      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_catalog.h"
++      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_ppo.h"
++      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_formfill.h"
++      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_save.h"
++      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_doc.h"
++      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_structtree.h"
++      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_dataavail.h"
++      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_fwlevent.h"
++      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_ext.h"
++      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_transformpage.h"
++      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_flatten.h"
++      - ".dart_tool/pdfium_headers/chromium_7811/include/fpdf_thumbnail.h"
++    include-directives:
++      - ".dart_tool/pdfium_headers/chromium_7811/include/**"
++  preamble: |
++    // ignore_for_file: unused_field
++    // dart format off
++  name: "PDFium"
++  comments:
++    style: any
++    length: full
+diff --git a/test/proxy_http_client_test.dart a/test/proxy_http_client_test.dart
+deleted file mode 100644
+index 4ed3192..0000000
+--- a/test/proxy_http_client_test.dart
++++ /dev/null
+@@ -1,176 +0,0 @@
+-import 'dart:io';
+-
+-import 'package:http/http.dart' as http;
+-import 'package:http/testing.dart';
+-import 'package:test/test.dart';
+-
+-import '../lib/src/proxy_http_client.dart';
+-
+-void main() {
+-  test('retries a transient client failure', () async {
+-    var attempts = 0;
+-    final response = await getWithRetries(
+-      Uri.parse('https://example.com/pdfium.tgz'),
+-      clientFactory: () async => MockClient((request) async {
+-        attempts++;
+-        if (attempts == 1)
+-          throw http.ClientException('connection reset', request.url);
+-        return http.Response('archive', HttpStatus.ok);
+-      }),
+-      retryDelays: [Duration.zero],
+-    );
+-
+-    expect(response.statusCode, HttpStatus.ok);
+-    expect(attempts, 2);
+-  });
+-
+-  test('retries a transient HTTP response', () async {
+-    var attempts = 0;
+-    final response = await getWithRetries(
+-      Uri.parse('https://example.com/pdfium.tgz'),
+-      clientFactory: () async => MockClient((request) async {
+-        attempts++;
+-        return http.Response(
+-          '',
+-          attempts == 1 ? HttpStatus.serviceUnavailable : HttpStatus.ok,
+-        );
+-      }),
+-      retryDelays: [Duration.zero],
+-    );
+-
+-    expect(response.statusCode, HttpStatus.ok);
+-    expect(attempts, 2);
+-  });
+-
+-  test('does not retry a permanent HTTP response', () async {
+-    var attempts = 0;
+-    final response = await getWithRetries(
+-      Uri.parse('https://example.com/pdfium.tgz'),
+-      clientFactory: () async => MockClient((request) async {
+-        attempts++;
+-        return http.Response('', HttpStatus.notFound);
+-      }),
+-      retryDelays: [Duration.zero],
+-    );
+-
+-    expect(response.statusCode, HttpStatus.notFound);
+-    expect(attempts, 1);
+-  });
+-
+-  test('parses Windows proxy strings from the API', () {
+-    expect(parseWindowsProxySettings('proxy:8080', 'localhost;<local>'), {
+-      'http_proxy': 'proxy:8080',
+-      'https_proxy': 'proxy:8080',
+-      'no_proxy': 'localhost,<local>',
+-    });
+-    expect(
+-      parseWindowsProxySettings(
+-        'http=proxy:80;https=secure:443;socks=socks:1080',
+-      ),
+-      {'http_proxy': 'proxy:80', 'https_proxy': 'secure:443'},
+-    );
+-    expect(parseWindowsProxySettings(null), isNull);
+-    expect(parseWindowsProxySettings(''), isNull);
+-    expect(parseWindowsProxySettings('socks=socks:1080'), isNull);
+-  });
+-
+-  test(
+-    'reads Windows configuration using the real ABI and allocator',
+-    () async {
+-      for (var i = 0; i < 10; i++) {
+-        loadWindowsProxyEnvironment();
+-      }
+-      final client = await createProxyAwareHttpClient();
+-      client.close();
+-    },
+-    skip: !Platform.isWindows,
+-  );
+-
+-  test('parses global macOS settings and ignores scoped dictionaries', () {
+-    final settings = parseMacOSProxySettings(macOSSettings);
+-    expect(settings, {
+-      'http_proxy': 'proxy:8080',
+-      'https_proxy': '[::1]:8443',
+-      'no_proxy': '*.example.org,localhost,<local>',
+-    });
+-    expect(
+-      findDownloadProxy(Uri.parse('https://github.com'), {}, settings),
+-      'PROXY [::1]:8443',
+-    );
+-    expect(
+-      findDownloadProxy(Uri.parse('http://a.example.org'), {}, settings),
+-      'DIRECT',
+-    );
+-    expect(
+-      findDownloadProxy(Uri.parse('http://intranet'), {}, settings),
+-      'DIRECT',
+-    );
+-  });
+-
+-  test('ignores disabled, invalid and PAC-only macOS settings', () {
+-    for (final fields in [
+-      'HTTPEnable : 0\nHTTPProxy : proxy\nHTTPPort : 8080',
+-      'HTTPEnable : 1\nHTTPProxy : proxy\nHTTPPort : 65536',
+-      'HTTPEnable : 1\nHTTPProxy : proxy\nHTTPPort : invalid',
+-      'HTTPEnable : 1\nHTTPPort : 8080',
+-      'ProxyAutoConfigEnable : 1\nProxyAutoConfigURLString : https://example.com/proxy.pac',
+-    ]) {
+-      expect(parseMacOSProxySettings('<dictionary> {\n$fields\n}'), isNull);
+-    }
+-    expect(parseMacOSProxySettings(''), isNull);
+-  });
+-
+-  test('environment precedence and bypasses survive system fallback', () {
+-    final system = parseWindowsProxySettings(
+-      'proxy:8080',
+-      '*.internal;<local>',
+-    )!;
+-    final url = Uri.parse('https://github.com');
+-    for (final key in ['https_proxy', 'HTTPS_PROXY']) {
+-      expect(
+-        findDownloadProxy(url, {key: 'explicit:1234'}, system),
+-        'PROXY explicit:1234',
+-      );
+-      expect(findDownloadProxy(url, {key: ''}, system), 'DIRECT');
+-    }
+-    for (final key in ['no_proxy', 'NO_PROXY']) {
+-      expect(findDownloadProxy(url, {key: 'github.com'}, system), 'DIRECT');
+-    }
+-    expect(
+-      findDownloadProxy(url, {'http_proxy': 'explicit:1234'}, system),
+-      'PROXY proxy:8080',
+-    );
+-    expect(
+-      findDownloadProxy(Uri.parse('http://a.internal'), {}, system),
+-      'DIRECT',
+-    );
+-    expect(
+-      findDownloadProxy(Uri.parse('http://intranet'), {}, system),
+-      'DIRECT',
+-    );
+-    expect(findDownloadProxy(url, {}, null), 'DIRECT');
+-  });
+-}
+-
+-const macOSSettings = '''
+-<dictionary> {
+-  ExceptionsList : <array> {
+-    0 : *.example.org
+-    1 : localhost
+-  }
+-  ExcludeSimpleHostnames : 1
+-  HTTPEnable : 1
+-  HTTPProxy : proxy
+-  HTTPPort : 8080
+-  HTTPSEnable : 1
+-  HTTPSProxy : ::1
+-  HTTPSPort : 8443
+-  __SCOPED__ : <dictionary> {
+-    en0 : <dictionary> {
+-      HTTPEnable : 1
+-      HTTPProxy : scoped.example.com
+-      HTTPPort : 9999
+-    }
+-  }
+-}
+-''';

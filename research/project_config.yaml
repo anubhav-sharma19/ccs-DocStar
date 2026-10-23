@@ -1,8 +1,8 @@
-# ccs-docengine research config (adapted from reverse-engineering-skill / tailor-bdd-skills-for-project)
+# DocStar (formerly ccs-docengine) research config (adapted from reverse-engineering-skill / tailor-bdd-skills-for-project)
 # Purpose: spec-only research. No product code, no real financial data.
 
 project:
-  name: ccs-docengine
+  name: docstar
   goal: "Universal offline deterministic document engine; ML steps of Docling replaced by rules"
   reference_design: "Docling (PDF path only)"
 

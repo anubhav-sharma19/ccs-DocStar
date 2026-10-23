@@ -22,3 +22,8 @@ flutter:
   uses-material-design: true
   assets:
     - assets/fixtures/
+
+# Vendored, hash-pinned PDFium (no build-time download). Required in every root app; see README "Using DocStar".
+dependency_overrides:
+  pdfium_dart:
+    path: ../../third_party/pdfium_dart

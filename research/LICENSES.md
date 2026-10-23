@@ -1,4 +1,4 @@
-# Licenses — sources used by ccs-docengine
+# Licenses — sources used by DocStar
 
 Verdict rule (from the brief):
 - **MIT / Apache-2.0 / BSD** → ideas and rules may be reused (keep the license notice in any reused text).
@@ -14,6 +14,8 @@ Verdict rule (from the brief):
 | xfina (PyPI `xfina` 0.9.0) | https://github.com/xfina-dev/xfina (2561737) | Apache-2.0 (`LICENSE`) | **Medium confidence, usable per Apache-2.0** (upgraded after provenance re-check; keep the license notice and any NOTICE file). Caveat: owner-vs-maintainer match could not be checked. See below. |
 | CardQL (PyPI `cardql` 0.1.1) | https://github.com/ananyaem/CardQL (d54d6f8) | Apache-2.0 (`LICENSE`) | Rules reusable; keep NOTICE. Issuers: Axis, HDFC, HSBC, ICICI, IndusInd, SBI. PyPI metadata has no license field; the repo LICENSE is the source of truth. |
 | pdfrx_engine 0.8.0 / pdfrx 2.10.0 (pub.dev) | https://github.com/espresso3389/pdfrx (pub.dev archives, read-only copies in `research/sources/`) | MIT (`LICENSE` in each package) | Rules and API facts reusable. Chosen as the recommended PDF reader adapter (spike S1). PDFium's own licence is **not checked** here |
+| PDFium chromium/7811 prebuilt (vendored, `third_party/pdfium/`) | https://github.com/bblanchon/pdfium-binaries | Build scripts MIT (`LICENSE`); PDFium BSD-3-Clause (`licenses/pdfium.txt`); bundled libraries under their own notices (`licenses/`) | Shipped as a binary in apps. Keep `licenses/` with the app's open-source notices |
+| pdfium_dart 0.4.0 (patched fork, `third_party/pdfium_dart/`) | https://github.com/espresso3389/pdfrx | MIT (upstream `LICENSE` kept) | Forked so the build hook uses the vendored PDFium and never downloads (`NOTICE.md`) |
 
 ## Removed
 

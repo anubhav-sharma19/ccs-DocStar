@@ -1,6 +1,6 @@
-# ccs-docengine — Engine Specification (Stage 3)
+# DocStar — Engine Specification (Stage 3)
 
-Working name: `ccs-docengine`. Output of the research phase. **No code in this document.**
+Name: `DocStar` (Dart package `docstar`; renamed from `ccs-docengine` on 2026-10-23). Universal CalmCraft document engine; Finora and Pocket Proof will consume it. Output of the research phase. **No code in this document.**
 Written for a reader new to document AI: every term is explained where it first appears.
 
 ---

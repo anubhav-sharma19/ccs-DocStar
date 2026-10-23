@@ -1,0 +1,18 @@
+name: pdfrx_cli_spike
+description: Batch pdfrx_engine/PDFium text-extraction measurements for local PDFs (macOS arm64).
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  # pinned: PDFium chromium/7811, same as the Android spike
+  pdfrx_engine: 0.8.0
+  pdfium_dart: 0.4.0
+  crypto: ^3.0.7
+  image: ^4.8.0
+
+# Vendored, hash-pinned PDFium (no build-time download). Required in every root app; see README "Using DocStar".
+dependency_overrides:
+  pdfium_dart:
+    path: ../../third_party/pdfium_dart
