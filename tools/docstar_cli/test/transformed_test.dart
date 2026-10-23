@@ -40,4 +40,16 @@ void main() {
     expect(rows.take(12).map((r) => r[3]), everyElement(isNull), reason: 'page 1 has no credits');
     expect(rows.skip(12).where((r) => r[3] != null), hasLength(3));
   });
+
+  test('logical_tables: a narration wrapped over the page break is one row again', () {
+    final out = transformed(layout(statement(pages: 2, repeatHeader: false, carryOver: 'REST OF NARRATION')));
+    final page2 = (out['tables'] as List)[1] as Map;
+    expect(page2['continues_row'], isTrue);
+    expect((page2['rows'] as List).first, [null, 'REST OF NARRATION', null, null, null]);
+    final rows = (((out['logical_tables'] as List).single as Map)['rows'] as List).cast<List>();
+    expect(rows, hasLength(24), reason: '12 + 12 rows, the carried line merged, not a row of its own');
+    expect(rows[11][1], 'UPI/1011/SHOP XXXX REST OF NARRATION');
+    expect(rows[11][0], '12/06/2026');
+    expect(rows[12][0], '13/06/2026');
+  });
 }

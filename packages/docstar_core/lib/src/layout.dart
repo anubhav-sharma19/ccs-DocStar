@@ -599,10 +599,31 @@ _PageBuild _buildPage(
     if (headerLine == null && fewer) cols = prevLast.cols; // grid on the previous page's columns
     if (headerLine != null) cols = _splitAtHeader(cols, _segments(headerLine, segGap), rows);
     if (header != null) cols = _anchorColumns(cols, header, hints!);
-    cols = forced[(p.input.number, run.lines.first.idx)] ?? cols;
-    final table = _grid(p, run.lines, cols, headerLine, hints, cfg, header != null);
-    tableLines.addAll(run.lines);
-    tableBlocks.add((run.lines.first, run.lines, table));
+    // A narration wrapped over the page break: single-column lines just above the
+    // first table of a continuing page (top of page, wrap spacing) belong to it.
+    var lines = run.lines;
+    if (headerLine == null && infos.isEmpty && prevLast != null) {
+      final lead = <_Line>[];
+      for (var i = body.indexOf(run.lines.first) - 1; i >= 0; i--) {
+        final l = body[i], next = lead.isEmpty ? run.lines.first : lead.first;
+        final segs = _segments(l, segGap);
+        if (segs.length != 1 ||
+            tall(l) ||
+            isSection(l) ||
+            _hits(segs.first, run.bands).length != 1 ||
+            next.box.top - l.box.bottom > contGap) {
+          break;
+        }
+        lead.insert(0, l);
+      }
+      if (lead.isNotEmpty && lead.first.box.top <= headerBottom + cfg.headlessTopBand * p.h) {
+        lines = [...lead, ...run.lines];
+      }
+    }
+    cols = forced[(p.input.number, lines.first.idx)] ?? cols;
+    final table = _grid(p, lines, cols, headerLine, hints, cfg, header != null);
+    tableLines.addAll(lines);
+    tableBlocks.add((lines.first, lines, table));
     infos.add(table);
   }
 
@@ -693,6 +714,7 @@ _PageBuild _buildPage(
       final info = b.$3!;
       table = _finishTable(info, 'p$n.t${tableNo++}', wordIds);
       if (lastInfo == null && prevLast != null) _link(info, table, prevLast, cfg, p);
+      table.continuesRow = table.continuesFrom != null && info.firstRowContinues;
       lastInfo = _TableInfo(table, info.cols, info.headerKey);
       builtTables.add(_BuiltTable(table, n, b.$2.first.idx, info.cols));
     }
@@ -834,7 +856,8 @@ class _Grid {
   final int? headerRow;
   final List<_Range> cols;
   final String? headerKey; // normalised header row text, for repeated-header links
-  _Grid(this.grid, this.rowBoxes, this.method, this.headerRow, this.cols, this.headerKey);
+  final bool firstRowContinues; // first data row made from a line without a row start
+  _Grid(this.grid, this.rowBoxes, this.method, this.headerRow, this.cols, this.headerKey, this.firstRowContinues);
 }
 
 _Grid _grid(_Prepared p, List<_Line> lines, List<_Range> cols, _Line? header, TableHints? hints,
@@ -850,6 +873,7 @@ _Grid _grid(_Prepared p, List<_Line> lines, List<_Range> cols, _Line? header, Ta
   int? headerRow;
   final pending = <_Line>[];
   final before = hints?.continuation == Continuation.before;
+  var firstRowContinues = false;
   for (final l in lines) {
     if (l == header) {
       headerRow = rows.length;
@@ -860,6 +884,7 @@ _Grid _grid(_Prepared p, List<_Line> lines, List<_Range> cols, _Line? header, Ta
     } else if (before) {
       pending.add(l);
     } else if (rows.isEmpty || rows.length - 1 == headerRow) {
+      firstRowContinues = true; // only reachable for the first data row
       rows.add([l]);
     } else {
       rows.last.add(l);
@@ -884,7 +909,7 @@ _Grid _grid(_Prepared p, List<_Line> lines, List<_Range> cols, _Line? header, Ta
       ? null
       : [for (final cell in grid[headerRow]) _norm(cell.map((w) => w.text).join(' '))].join('|');
   return _Grid(grid, rowBoxes, anchored ? TableMethod.headerAnchored : TableMethod.whitespace, headerRow, cols,
-      headerKey);
+      headerKey, firstRowContinues);
 }
 
 Table _finishTable(_Grid g, String id, Map<_Word, String> wordIds) {

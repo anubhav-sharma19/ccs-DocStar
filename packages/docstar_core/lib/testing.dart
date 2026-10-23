@@ -89,6 +89,7 @@ List<PageInput> statement({
   double wrapPitch = 12, // baseline to baseline between a row and its wrapped line
   int creditEvery = 3, // every n-th row is a credit (sparse credit column when large)
   bool firstHeader = true, // header row on page 1
+  String? carryOver, // on pages 2+: a narration line continued from the previous page, above the first row
 }) {
   final out = <PageInput>[];
   var row = 0;
@@ -112,6 +113,10 @@ List<PageInput> statement({
       y = 134;
     } else {
       y = 100;
+    }
+    if (p > 1 && carryOver != null) {
+      texts.add(T(xDesc + shift, y, carryOver));
+      y += wrapPitch;
     }
     for (var i = 0; i < rowsPerPage; i++, row++) {
       final wrapped = wrapEvery > 0 && row % wrapEvery == 0;

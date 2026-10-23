@@ -104,6 +104,9 @@ class Table {
   final List<Cell> cells; // row-major, rows x cols, empty cells included
   String? continuesFrom; // id of the previous page's table
   bool repeatedHeader = false;
+  /// The first data row has no row start: it is the end of the previous page's
+  /// last row (a narration wrapped over the page break). Set only when linked.
+  bool continuesRow = false;
   Table(this.id, this.method, this.rows, this.cols, this.headerRow, this.cells);
 
   Cell cell(int r, int c) => cells[r * cols + c];
@@ -117,6 +120,7 @@ class Table {
         'headerRow': headerRow,
         'continuesFrom': continuesFrom,
         'repeatedHeader': repeatedHeader,
+        if (continuesRow) 'continuesRow': true,
         'cells': [for (final c in cells) c.toJson()],
       };
 }

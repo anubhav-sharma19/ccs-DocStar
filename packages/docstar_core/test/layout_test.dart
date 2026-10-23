@@ -370,6 +370,38 @@ void main() {
       expect([for (var r = 0; r < tables[1].rows; r++) tables[1].cell(r, 3).text].where((t) => t.isNotEmpty), hasLength(3));
     });
 
+    group('narration continued from the previous page', () {
+      for (final header in [false, true]) {
+        test(header ? 'after a repeated header' : 'headless page', () {
+          final tables =
+              layout(statement(pages: 2, repeatHeader: header, carryOver: 'REST OF NARRATION')).tables.toList();
+          expect(tables, hasLength(2));
+          final t = tables[1];
+          expect(t.continuesFrom, tables[0].id);
+          expect(t.continuesRow, isTrue);
+          final first = header ? 1 : 0;
+          expect(t.rowTexts(first), ['', 'REST OF NARRATION', '', '', '']);
+          expect(t.rows, 12 + 1 + (header ? 1 : 0));
+          expect(tables[0].continuesRow, isFalse);
+        });
+      }
+      test('negative: a line two blank lines above the table stays text', () {
+        final p1 = statement(pages: 1).single;
+        final p2 = page(2, [
+          const T(xDesc, 60, 'SOME NOTE'),
+          for (var i = 0; i < 4; i++) ...[
+            T(xDate, 100.0 + 14 * i, '0${i + 1}/07/2026'),
+            T(xDesc, 100.0 + 14 * i, 'UPI/X$i'),
+            r(rDebit, 100.0 + 14 * i, '9.00'),
+            r(rBal, 100.0 + 14 * i, '99.00'),
+          ]
+        ]);
+        final doc = layout([p1, p2]);
+        expect(doc.tables.last.continuesRow, isFalse);
+        expect(doc.tables.last.cells.where((c) => c.text.contains('NOTE')), isEmpty);
+      });
+    });
+
     test('negative: missing sparse column AND columns moved by 3 pitches does not link', () {
       final p1 = statement(pages: 1, creditEvery: 8).single;
       final p2 = statement(pages: 2, rowsPerPage: 6, repeatHeader: false, creditEvery: 1000, headlessShift: 3 * adv)[1];

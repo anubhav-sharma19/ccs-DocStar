@@ -136,6 +136,12 @@ Soft budget < 300 ms on the emulator: met by about 8x. Layout only; PDF char ext
 - Fix: (1) a headless page with more columns than the previous one (the column first used there) now links; (2) every chain of linked tables is gridded on one merged column set (second layout pass, only when counts differ). `transformed.json`: empty cells are `null`, plus `logical_tables` (each chain as one row list, `same_columns` check).
 - Tests: page 1 with no header and no credits, page 2 with credits: linked, both 5 columns, credits only at index 3, balance always at index 4. Turning off the unify pass fails the test. Earlier fixture hashes unchanged. Synthetic run: `ten_pages.pdf` gives one logical table, 10 pages, 450 rows of 5. Tests: core 69, adapter 24, CLI 5.
 
+## Narration continued over a page break (2026-10-23)
+
+- Bug you reported: a narration continuing on the next page, at the top of the table before any dated row, was dropped from the table (it became a text block), so the next transaction appeared without it.
+- Fix: such lines join the continuing page's first table (headless page: lines just above the first row, top of page, within wrap spacing, inside one column; after a repeated header they were already a row). The first row is flagged `Table.continuesRow` (JSON `continuesRow: true`, only when set). `transformed.json` `logical_tables` merges it into the previous page's last row.
+- Tests: headless and repeated-header pages with a carried-over line (flag and row), negative (a note two blank lines above the table stays text), logical-table merge (24 rows, narration joined). Turning off the prepend fails the test. Earlier fixture hashes unchanged. Tests: core 72, adapter 24, CLI 6.
+
 ## Open items
 
 - **iOS/macOS Flutter apps still fetch PDFium via pdfium_flutter podspec. Must vendor + hash-pin before Finora iOS build.**
