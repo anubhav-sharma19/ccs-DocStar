@@ -1,0 +1,24 @@
+name: pdfrx_spike
+description: "THROWAWAY spike: does pdfrx_engine (PDFium) give per-character boxes on Android? Not the engine."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.13.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+  pdfrx_engine: ^0.8.0
+  pdfium_flutter: ^0.4.0
+  file_picker: ^13.1.0
+  path_provider: ^2.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/fixtures/

@@ -1,0 +1,357 @@
+{
+ "mode": "selftest_fakes",
+ "time": "2026-10-23T13:12:26.772878",
+ "dart": "3.13.1",
+ "os": "sdk_gphone64_arm64-userdebug 16 BE2A.250530.026.F3 13894323 dev-keys",
+ "cpus": 4,
+ "rss_start": "196849664/196849664",
+ "rotation_and_frame": [
+  {
+   "file": "plain_1p.pdf",
+   "expected_rotation_deg": 0,
+   "reported_rotation_deg": 0,
+   "reported_size_pt": [
+    595.0,
+    842.0
+   ],
+   "chars": 3096,
+   "digest_fixture_only": "3e9521116bec318b",
+   "rects_equal_text_length": true,
+   "empty_rects": 237,
+   "empty_rects_non_space": 0,
+   "probes": [
+    {
+     "found": true,
+     "err_unrotated_pt": 0.64,
+     "err_display_pt": 0.64,
+     "tol_pt": 10.4,
+     "matches_unrotated": true,
+     "matches_display": true
+    },
+    {
+     "found": true,
+     "err_unrotated_pt": 0.63,
+     "err_display_pt": 0.63,
+     "tol_pt": 10.4,
+     "matches_unrotated": true,
+     "matches_display": true
+    },
+    {
+     "found": true,
+     "err_unrotated_pt": 0.45,
+     "err_display_pt": 0.45,
+     "tol_pt": 8.0,
+     "matches_unrotated": true,
+     "matches_display": true
+    }
+   ]
+  },
+  {
+   "file": "rot90_1p.pdf",
+   "expected_rotation_deg": 90,
+   "reported_rotation_deg": 90,
+   "reported_size_pt": [
+    842.0,
+    595.0
+   ],
+   "chars": 3097,
+   "digest_fixture_only": "a69624659a22560",
+   "rects_equal_text_length": true,
+   "empty_rects": 238,
+   "empty_rects_non_space": 0,
+   "probes": [
+    {
+     "found": true,
+     "err_unrotated_pt": 0.64,
+     "err_display_pt": 634.16,
+     "tol_pt": 10.4,
+     "matches_unrotated": true,
+     "matches_display": false
+    },
+    {
+     "found": true,
+     "err_unrotated_pt": 0.63,
+     "err_display_pt": 67.99,
+     "tol_pt": 10.4,
+     "matches_unrotated": true,
+     "matches_display": false
+    },
+    {
+     "found": true,
+     "err_unrotated_pt": 0.45,
+     "err_display_pt": 405.43,
+     "tol_pt": 8.0,
+     "matches_unrotated": true,
+     "matches_display": false
+    }
+   ]
+  },
+  {
+   "file": "rot180_1p.pdf",
+   "expected_rotation_deg": 180,
+   "reported_rotation_deg": 180,
+   "reported_size_pt": [
+    595.0,
+    842.0
+   ],
+   "chars": 3096,
+   "digest_fixture_only": "6b04988803fa5ceb",
+   "rects_equal_text_length": true,
+   "empty_rects": 237,
+   "empty_rects_non_space": 0,
+   "probes": [
+    {
+     "found": true,
+     "err_unrotated_pt": 0.64,
+     "err_display_pt": 681.06,
+     "tol_pt": 10.4,
+     "matches_unrotated": true,
+     "matches_display": false
+    },
+    {
+     "found": true,
+     "err_unrotated_pt": 0.63,
+     "err_display_pt": 250.64,
+     "tol_pt": 10.4,
+     "matches_unrotated": true,
+     "matches_display": false
+    },
+    {
+     "found": true,
+     "err_unrotated_pt": 0.45,
+     "err_display_pt": 762.18,
+     "tol_pt": 8.0,
+     "matches_unrotated": true,
+     "matches_display": false
+    }
+   ]
+  },
+  {
+   "file": "rot270_1p.pdf",
+   "expected_rotation_deg": 270,
+   "reported_rotation_deg": 270,
+   "reported_size_pt": [
+    842.0,
+    595.0
+   ],
+   "chars": 3096,
+   "digest_fixture_only": "3e9521116bec318b",
+   "rects_equal_text_length": true,
+   "empty_rects": 237,
+   "empty_rects_non_space": 0,
+   "probes": [
+    {
+     "found": true,
+     "err_unrotated_pt": 0.64,
+     "err_display_pt": 596.42,
+     "tol_pt": 10.4,
+     "matches_unrotated": true,
+     "matches_display": false
+    },
+    {
+     "found": true,
+     "err_unrotated_pt": 0.63,
+     "err_display_pt": 195.9,
+     "tol_pt": 10.4,
+     "matches_unrotated": true,
+     "matches_display": false
+    },
+    {
+     "found": true,
+     "err_unrotated_pt": 0.45,
+     "err_display_pt": 465.29,
+     "tol_pt": 8.0,
+     "matches_unrotated": true,
+     "matches_display": false
+    }
+   ]
+  },
+  {
+   "file": "cropbox_1p.pdf",
+   "expected_rotation_deg": 0,
+   "reported_rotation_deg": 0,
+   "reported_size_pt": [
+    495.0,
+    722.0
+   ],
+   "chars": 3096,
+   "digest_fixture_only": "-3a5d483426014528",
+   "rects_equal_text_length": true,
+   "empty_rects": 237,
+   "empty_rects_non_space": 0,
+   "probes": [
+    {
+     "found": true,
+     "err_unrotated_pt": 0.64,
+     "err_display_pt": 0.64,
+     "tol_pt": 10.4,
+     "matches_unrotated": true,
+     "matches_display": true
+    },
+    {
+     "found": true,
+     "err_unrotated_pt": 0.63,
+     "err_display_pt": 0.63,
+     "tol_pt": 10.4,
+     "matches_unrotated": true,
+     "matches_display": true
+    },
+    {
+     "found": true,
+     "err_unrotated_pt": 0.45,
+     "err_display_pt": 0.45,
+     "tol_pt": 8.0,
+     "matches_unrotated": true,
+     "matches_display": true
+    }
+   ]
+  }
+ ],
+ "frame_verdict": "unrotated_frame_all_fixtures",
+ "password": [
+  {
+   "scenario": "right_first",
+   "outcome": "opened",
+   "provider_calls": 1,
+   "open_ms": 28
+  },
+  {
+   "scenario": "wrong_then_right",
+   "outcome": "opened",
+   "provider_calls": 2,
+   "open_ms": 32
+  },
+  {
+   "scenario": "wrong_then_cancel",
+   "outcome": "password_failed_or_cancelled",
+   "provider_calls": 2,
+   "open_ms": 9
+  },
+  {
+   "scenario": "cancel_immediately",
+   "outcome": "password_failed_or_cancelled",
+   "provider_calls": 1,
+   "open_ms": 5
+  },
+  {
+   "scenario": "unlocked_file_never_asks",
+   "outcome": "opened",
+   "provider_calls": 0,
+   "open_ms": 5
+  }
+ ],
+ "rupee_fixture": {
+  "before_amount": {
+   "DIGIT": 72,
+   "U+002C": 3,
+   "U+002D": 15,
+   "U+20B9": 1,
+   "U+0060": 1,
+   "U+0043": 1
+  },
+  "after_amount": {
+   "DIGIT": 27,
+   "U+000D": 45,
+   "U+002D": 18,
+   "U+0060": 1,
+   "U+0043": 1
+  },
+  "has_u20b9_before_amount": true,
+  "has_backtick_before_amount": true,
+  "has_letter_C_before_amount": true,
+  "has_pua_anywhere": false,
+  "pua_codepoints": []
+ },
+ "plain_fixture_codepoints": {
+  "before_amount": {
+   "DIGIT": 72,
+   "U+002C": 3,
+   "U+002D": 15
+  },
+  "after_amount": {
+   "DIGIT": 27,
+   "U+000D": 45,
+   "U+002D": 18
+  },
+  "has_u20b9_before_amount": false,
+  "has_backtick_before_amount": false,
+  "has_letter_C_before_amount": false,
+  "has_pua_anywhere": false,
+  "pua_codepoints": []
+ },
+ "performance_ten_pages": [
+  {
+   "run": 1,
+   "pages": 10,
+   "open_ms": 27,
+   "extract_total_ms": 91,
+   "extract_ms_per_page": [
+    1,
+    2,
+    18,
+    1,
+    1,
+    1,
+    1,
+    4,
+    6,
+    16
+   ],
+   "render_total_ms_1x": 52,
+   "chars": 30864,
+   "deterministic_identical": true,
+   "digest_fixture_only": "-576f85aecc7f57ee",
+   "rss_current_max_before": "205500416/205500416",
+   "rss_current_max_after": "220561408/220561408"
+  },
+  {
+   "run": 2,
+   "pages": 10,
+   "open_ms": 18,
+   "extract_total_ms": 51,
+   "extract_ms_per_page": [
+    9,
+    1,
+    1,
+    1,
+    6,
+    3,
+    5,
+    1,
+    1,
+    3
+   ],
+   "render_total_ms_1x": 56,
+   "chars": 30864,
+   "deterministic_identical": true,
+   "digest_fixture_only": "-576f85aecc7f57ee",
+   "rss_current_max_before": "220561408/220561408",
+   "rss_current_max_after": "221290496/221290496"
+  },
+  {
+   "run": 3,
+   "pages": 10,
+   "open_ms": 5,
+   "extract_total_ms": 34,
+   "extract_ms_per_page": [
+    1,
+    1,
+    4,
+    3,
+    2,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   "render_total_ms_1x": 11,
+   "chars": 30864,
+   "deterministic_identical": true,
+   "digest_fixture_only": "-576f85aecc7f57ee",
+   "rss_current_max_before": "221290496/221290496",
+   "rss_current_max_after": "221945856/221945856"
+  }
+ ],
+ "rss_end": "221945856/221945856"
+}

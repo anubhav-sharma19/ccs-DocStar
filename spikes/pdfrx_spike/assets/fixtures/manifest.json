@@ -1,0 +1,295 @@
+[
+ {
+  "file": "plain_1p.pdf",
+  "pages": 1,
+  "rotation": 0,
+  "mediabox": [
+   0,
+   0,
+   595.0,
+   842.0
+  ],
+  "cropbox": null,
+  "password": null,
+  "probes": [
+   {
+    "text": "PROBE-ALPHA",
+    "x": 60,
+    "y": 700,
+    "size": 14,
+    "width": 98.615234375
+   },
+   {
+    "text": "PROBE-BETA",
+    "x": 300,
+    "y": 300,
+    "size": 14,
+    "width": 89.2705078125
+   },
+   {
+    "text": "PROBE-GAMMA",
+    "x": 470,
+    "y": 100,
+    "size": 10,
+    "width": 76.3232421875
+   }
+  ]
+ },
+ {
+  "file": "rot90_1p.pdf",
+  "pages": 1,
+  "rotation": 90,
+  "mediabox": [
+   0,
+   0,
+   595.0,
+   842.0
+  ],
+  "cropbox": null,
+  "password": null,
+  "probes": [
+   {
+    "text": "PROBE-ALPHA",
+    "x": 60,
+    "y": 700,
+    "size": 14,
+    "width": 98.615234375
+   },
+   {
+    "text": "PROBE-BETA",
+    "x": 300,
+    "y": 300,
+    "size": 14,
+    "width": 89.2705078125
+   },
+   {
+    "text": "PROBE-GAMMA",
+    "x": 470,
+    "y": 100,
+    "size": 10,
+    "width": 76.3232421875
+   }
+  ]
+ },
+ {
+  "file": "rot180_1p.pdf",
+  "pages": 1,
+  "rotation": 180,
+  "mediabox": [
+   0,
+   0,
+   595.0,
+   842.0
+  ],
+  "cropbox": null,
+  "password": null,
+  "probes": [
+   {
+    "text": "PROBE-ALPHA",
+    "x": 60,
+    "y": 700,
+    "size": 14,
+    "width": 98.615234375
+   },
+   {
+    "text": "PROBE-BETA",
+    "x": 300,
+    "y": 300,
+    "size": 14,
+    "width": 89.2705078125
+   },
+   {
+    "text": "PROBE-GAMMA",
+    "x": 470,
+    "y": 100,
+    "size": 10,
+    "width": 76.3232421875
+   }
+  ]
+ },
+ {
+  "file": "rot270_1p.pdf",
+  "pages": 1,
+  "rotation": 270,
+  "mediabox": [
+   0,
+   0,
+   595.0,
+   842.0
+  ],
+  "cropbox": null,
+  "password": null,
+  "probes": [
+   {
+    "text": "PROBE-ALPHA",
+    "x": 60,
+    "y": 700,
+    "size": 14,
+    "width": 98.615234375
+   },
+   {
+    "text": "PROBE-BETA",
+    "x": 300,
+    "y": 300,
+    "size": 14,
+    "width": 89.2705078125
+   },
+   {
+    "text": "PROBE-GAMMA",
+    "x": 470,
+    "y": 100,
+    "size": 10,
+    "width": 76.3232421875
+   }
+  ]
+ },
+ {
+  "file": "cropbox_1p.pdf",
+  "pages": 1,
+  "rotation": 0,
+  "mediabox": [
+   0,
+   0,
+   595.0,
+   842.0
+  ],
+  "cropbox": [
+   50,
+   60,
+   545,
+   782
+  ],
+  "password": null,
+  "probes": [
+   {
+    "text": "PROBE-ALPHA",
+    "x": 60,
+    "y": 700,
+    "size": 14,
+    "width": 98.615234375
+   },
+   {
+    "text": "PROBE-BETA",
+    "x": 300,
+    "y": 300,
+    "size": 14,
+    "width": 89.2705078125
+   },
+   {
+    "text": "PROBE-GAMMA",
+    "x": 470,
+    "y": 100,
+    "size": 10,
+    "width": 76.3232421875
+   }
+  ]
+ },
+ {
+  "file": "ten_pages.pdf",
+  "pages": 10,
+  "rotation": 0,
+  "mediabox": [
+   0,
+   0,
+   595.0,
+   842.0
+  ],
+  "cropbox": null,
+  "password": null,
+  "probes": [
+   {
+    "text": "PROBE-ALPHA",
+    "x": 60,
+    "y": 700,
+    "size": 14,
+    "width": 98.615234375
+   },
+   {
+    "text": "PROBE-BETA",
+    "x": 300,
+    "y": 300,
+    "size": 14,
+    "width": 89.2705078125
+   },
+   {
+    "text": "PROBE-GAMMA",
+    "x": 470,
+    "y": 100,
+    "size": 10,
+    "width": 76.3232421875
+   }
+  ]
+ },
+ {
+  "file": "locked_1p.pdf",
+  "pages": 1,
+  "rotation": 0,
+  "mediabox": [
+   0,
+   0,
+   595.0,
+   842.0
+  ],
+  "cropbox": null,
+  "password": "Test1234",
+  "probes": [
+   {
+    "text": "PROBE-ALPHA",
+    "x": 60,
+    "y": 700,
+    "size": 14,
+    "width": 98.615234375
+   },
+   {
+    "text": "PROBE-BETA",
+    "x": 300,
+    "y": 300,
+    "size": 14,
+    "width": 89.2705078125
+   },
+   {
+    "text": "PROBE-GAMMA",
+    "x": 470,
+    "y": 100,
+    "size": 10,
+    "width": 76.3232421875
+   }
+  ]
+ },
+ {
+  "file": "rupee_1p.pdf",
+  "pages": 1,
+  "rotation": 0,
+  "mediabox": [
+   0,
+   0,
+   595.0,
+   842.0
+  ],
+  "cropbox": null,
+  "password": null,
+  "probes": [
+   {
+    "text": "PROBE-ALPHA",
+    "x": 60,
+    "y": 700,
+    "size": 14,
+    "width": 98.615234375
+   },
+   {
+    "text": "PROBE-BETA",
+    "x": 300,
+    "y": 300,
+    "size": 14,
+    "width": 89.2705078125
+   },
+   {
+    "text": "PROBE-GAMMA",
+    "x": 470,
+    "y": 100,
+    "size": 10,
+    "width": 76.3232421875
+   }
+  ]
+ }
+]
