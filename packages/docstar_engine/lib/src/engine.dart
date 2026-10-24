@@ -300,7 +300,7 @@ final _leadJunk = RegExp(r'^[\d\s/.\-]+');
         meta.add(ln);
         continue;
       }
-      if (_metaRx.hasMatch(text)) {
+      if (_metaRx.hasMatch(text) || _labelDate(ln, dcfg)) {
         meta.add(ln); // 'Account No : ...  Period : ...' block repeated above the table
         continue;
       }
@@ -358,6 +358,14 @@ String _descText(Cells cells, Line ln) {
   if (parts != null && parts.isNotEmpty) return parts.join(' ');
   // specials often print their label in the date/desc band
   return ln.text.replaceFirst(_leadJunk, '');
+}
+
+/// 'Label : dd/mm/yyyy ...' (account block, statement period): a date after a colon, not at the line start.
+/// A transaction row starts with its date, so it never matches.
+bool _labelDate(Line ln, DateConfig dcfg) {
+  final head = ln.words.take(3).map((w) => w.text).join(' ');
+  final hits = findDates(head, dcfg);
+  return hits.isNotEmpty && head.substring(0, hits.first.start).contains(':');
 }
 
 TLine _toTLine(Line ln, Cells cells, Section sec, DateConfig dcfg) {

@@ -122,6 +122,24 @@ void main() {
     });
   });
 
+  group('label-date lines', () {
+    test('a "Label : date" line above the carried narration is not part of the previous row\'s narration', () {
+      final p1 = statement([for (var i = 0; i < 5; i++) ('0${i + 1}/06/2026', 'ROW$i', '5.00', null, _money(10000 - 100 * (i + 1)))], opening: '10,000.00');
+      final p2 = <Word>[
+        w('Stmt', 40, 70, 60), w(':', 72, 75, 60), w('01/06/2026', 78, 130, 60), w('To', 140, 155, 60), w(':', 157, 160, 60), w('30/06/2026', 163, 215, 60),
+        w('CARRIED', 100, 150, 75),
+        for (var i = 5; i < 9; i++) ...[
+          w('0${i + 1}/06/2026', 40, 95, 90.0 + 15 * (i - 5)), w('ROW$i', 100, 135, 90.0 + 15 * (i - 5)), m('5.00', 340, 90.0 + 15 * (i - 5)), m(_money(10000 - 100 * (i + 1)), 480, 90.0 + 15 * (i - 5)),
+        ],
+      ];
+      final res = parseDocument(makeDocument([page(p1, n: 1), page(p2, n: 2)]));
+      final txns = (res['sections'] as List).expand((s) => s['transactions'] as List).toList();
+      expect(txns.length, 9);
+      expect(txns[4]['description'], 'ROW4 CARRIED');
+      expect(txns[5]['description'], 'ROW5');
+    });
+  });
+
   group('column cuts', () {
     test('no empty gutter before the Ref column (one row touches it): the cut still falls in the least-covered gap, not mid-narration', () {
       final ws = <Word>[
