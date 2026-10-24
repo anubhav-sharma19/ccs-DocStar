@@ -77,6 +77,70 @@ void main() {
     });
   });
 
+  group('reference column placement', () {
+    test('a reference starting left of the computed cut still goes to the reference column (few alphanumeric refs, long narrations)', () {
+      // Long narrations reach x~270 on a few rows and two references start at x~278: the empty run before the
+      // reference header is wide, so the cut falls right of those two references' left edge.
+      final pages = <Page>[];
+      final want = <String>[], words = <String>[];
+      var row = 0;
+      for (var pn = 1; pn <= 5; pn++) {
+        final ws = <Word>[w('Account', 34, 70, 40)];
+        if (pn == 1) {
+          ws.addAll([w('Date', 34, 52, 80), w('Narration', 72, 110, 80), w('Chq./Ref.No.', 289, 352, 80), w('Value', 363, 385, 80), w('Withdrawal', 438, 470, 80), w('Balance', 591, 626, 80)]);
+        }
+        var y = 100.0;
+        for (var i = 0; i < 30; i++, row++) {
+          final end = row % 9 == 4 ? 270.0 : 150.0;
+          final alpha = row == 40 || row == 100;
+          final ref = alpha ? 'R${row}AB-XXXXXXXXXX' : '${1000000000000000 + row}';
+          final amt = (100 + row).toStringAsFixed(2);
+          final bal = (900000 - 100 * row).toStringAsFixed(2);
+          final chain = <Word>[];
+          var x = 72.0, k = 0;
+          while (x < end - 1) {
+            final x1 = (x + 30 < end) ? x + 30 : end;
+            chain.add(w(k == 0 ? 'W$row' : 'N$row-$k', x, x1, y));
+            x = x1 + 2.4;
+            k++;
+          }
+          words.add(chain.map((c) => c.text).join(' '));
+          ws.addAll([
+            w('01/06/26', 34, 62, y), ...chain,
+            w(ref, alpha ? 277.6 : 288.9, 352.3, y), w('01/06/26', 363, 391, y), w(amt, 470.0 - 6.0 * amt.length, 470, y), w(bal, 626.0 - 6.0 * bal.length, 626, y),
+          ]);
+          want.add(ref);
+          y += 17;
+        }
+        pages.add(Page(pn, 638, 842, ws, []));
+      }
+      final res = parseDocument(makeDocument(pages));
+      final txns = [for (final s in res['sections'] as List) ...(s['transactions'] as List)];
+      expect(txns.length, 150);
+      expect([for (final t in txns) t['reference']], want);
+      expect([for (final t in txns) t['description']], words);
+    });
+  });
+
+  group('page furniture', () {
+    test('a repeated account-block line with a date in the middle is furniture, not narration of the row before it', () {
+      List<Word> block() => [
+            w('Account', 40, 85, 40), w('Number', 90, 130, 40), w('1234567', 200, 250, 40),
+            w('Period', 40, 80, 52), w('From', 85, 110, 52), w('01/06/2026', 115, 170, 52), w('To', 175, 190, 52), w('30/06/2026', 195, 250, 52),
+          ];
+      final p1 = [...statement([for (var i = 0; i < 5; i++) ('0${i + 1}/06/2026', 'ROW$i', '5.00', null, _money(10000 - 100 * (i + 1)))], opening: '10,000.00'), ...block()];
+      final p2 = <Word>[
+        ...block(),
+        for (var i = 5; i < 10; i++) ...[
+          w('0${i + 1}/06/2026', 40, 95, 64.0 + 15 * (i - 5)), w('ROW$i', 100, 135, 64.0 + 15 * (i - 5)), m('5.00', 340, 64.0 + 15 * (i - 5)), m(_money(10000 - 100 * (i + 1)), 480, 64.0 + 15 * (i - 5)),
+        ],
+      ];
+      final res = parseDocument(makeDocument([page(p1, n: 1), page(p2, n: 2)]));
+      final txns = (res['sections'] as List).expand((s) => s['transactions'] as List).toList();
+      expect(txns.map((t) => t['description']), [for (var i = 0; i < 10; i++) 'ROW$i']);
+    });
+  });
+
   group('column cuts', () {
     test('no empty gutter before the Ref column (one row touches it): the cut still falls in the least-covered gap, not mid-narration', () {
       final ws = <Word>[

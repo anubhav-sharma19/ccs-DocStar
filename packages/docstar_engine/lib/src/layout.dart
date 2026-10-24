@@ -443,7 +443,8 @@ void detectFurniture(Document doc) {
       }
       final inBand = topOk || bottomOk;
       final reps = sigs[ln.idx]!.map((k) => sigPages[k]!.length).reduce(math.max);
-      final dated = findDates(ln.words.take(3).map((w) => w.text).join(' ')).isNotEmpty;
+      // a transaction line starts with its date; a repeated line with a date in the middle ("Period : 01/06 to 30/06") is furniture
+      final dated = findDates(ln.words.take(3).map((w) => w.text).join(' ')).any((h) => h.start == 0);
       if (n >= 2 && reps >= need && inBand && !dated) {
         if (lx.openRx.hasMatch(t) || lx.closeRx.hasMatch(t)) continue; // B/F and C/F rows repeat every page but carry balances
         if (_txnLike(ln)) continue; // a dated line with money is a transaction, however often it repeats
@@ -551,7 +552,14 @@ Cells assignCells(Line line, ColumnModel cm, String locale, bool spaceGrouped) {
     String? role;
     for (var i = 0; i < cm.cols.length; i++) {
       if (bounds[i].$1 <= w.x0 && w.x0 < bounds[i].$2) {
-        role = cm.cols[i].role;
+        // a word that starts just left of the cut but lies mostly in the next text column belongs to it
+        // (a reference whose first letters sit left of the cut): same rule as the core layout (TR6)
+        final j = i + 1;
+        final mostlyNext = j < cm.cols.length &&
+            !lx.numericRoles.contains(cm.cols[j].role) &&
+            (w.x1 - bounds[j].$1) > 0.5 * (w.x1 - w.x0) &&
+            w.x1 >= cm.cols[j].center; // and reaches past the middle of that column, so narration overflow stays narration
+        role = cm.cols[mostlyNext ? j : i].role;
         break;
       }
     }
