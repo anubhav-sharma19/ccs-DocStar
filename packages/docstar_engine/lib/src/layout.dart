@@ -418,6 +418,18 @@ void detectFurniture(Document doc) {
       }
     }
   }
+  int repsOf(Line ln) => sigs[ln.idx]!.map((k) => sigPages[k]!.length).reduce(math.max);
+  // The unbroken stack of lines repeated at the same place from the top of a page that has no column
+  // header (account info under the letterhead, with a "period from .. to .." date line) is page furniture.
+  // It ends at the first line that does not repeat.
+  final lead = <Line>{};
+  for (final pg in doc.pages) {
+    if (n < 2 || hdrBottom[pg.number] != null) continue;
+    for (final ln in pg.lines) {
+      if (ln.top >= 0.35 * pg.height || ln.kind == 'header' || repsOf(ln) < need || _txnLike(ln)) break;
+      lead.add(ln);
+    }
+  }
   for (final pg in doc.pages) {
     final hb = hdrBottom[pg.number];
     for (final ln in pg.lines) {
@@ -441,9 +453,10 @@ void detectFurniture(Document doc) {
         final gap = above.isNotEmpty ? ln.top - above.reduce(math.max) : 99.0;
         bottomOk = belowTxn && (gap > 1.3 * math.max(6.0, ln.height) || ln.bottom > 0.93 * pg.height);
       }
-      final inBand = topOk || bottomOk;
-      final reps = sigs[ln.idx]!.map((k) => sigPages[k]!.length).reduce(math.max);
-      final dated = findDates(ln.words.take(3).map((w) => w.text).join(' ')).isNotEmpty;
+      final reps = repsOf(ln);
+      final topRepeat = lead.contains(ln);
+      final inBand = topOk || bottomOk || topRepeat;
+      final dated = findDates(ln.words.take(3).map((w) => w.text).join(' ')).isNotEmpty && !topRepeat;
       if (n >= 2 && reps >= need && inBand && !dated) {
         if (lx.openRx.hasMatch(t) || lx.closeRx.hasMatch(t)) continue; // B/F and C/F rows repeat every page but carry balances
         if (_txnLike(ln)) continue; // a dated line with money is a transaction, however often it repeats
