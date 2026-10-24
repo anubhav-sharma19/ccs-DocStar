@@ -75,7 +75,8 @@ double _garbageRatio(List<Word> words) {
   return bad / (bad + letters > 1 ? bad + letters : 1);
 }
 
-/// No usable text layer: fewer than 8 words, or more than 30% replacement chars / (cid:N) glyphs.
+/// No usable text layer: fewer than 8 words, or more than 30% bad glyphs (hyphens, replacement chars, (cid:N)).
+/// Hyphens count: same rule as the Python reference (docstar/extract.py).
 bool unreadable(Page page) => page.words.length < 8 || _garbageRatio(page.words) > 0.3;
 
 /// Group words into visual lines (same baseline band), left-to-right.
