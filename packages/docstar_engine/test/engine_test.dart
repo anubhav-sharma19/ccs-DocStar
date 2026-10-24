@@ -122,6 +122,71 @@ void main() {
     });
   });
 
+  group('label-date lines', () {
+    test('a "Label : date" line whose text sits in the date column is not a dated row; the carried narration after it survives', () {
+      final p1 = statement([for (var i = 0; i < 5; i++) ('0${i + 1}/06/2026', 'ROW$i', '5.00', null, _money(10000 - 100 * (i + 1)))], opening: '10,000.00');
+      final p2 = <Word>[
+        // all of it left of the date/narration cut, so the whole text is read as the line's date cell
+        w('Stmt', 40, 56, 60), w(':', 58, 61, 60), w('01/06/2026', 63, 84, 60),
+        w('CARRIED', 100, 150, 75),
+        for (var i = 5; i < 9; i++) ...[
+          w('0${i + 1}/06/2026', 40, 95, 90.0 + 15 * (i - 5)), w('ROW$i', 100, 135, 90.0 + 15 * (i - 5)), m('5.00', 340, 90.0 + 15 * (i - 5)), m(_money(10000 - 100 * (i + 1)), 480, 90.0 + 15 * (i - 5)),
+        ],
+      ];
+      final res = parseDocument(makeDocument([page(p1, n: 1), page(p2, n: 2)]));
+      final txns = (res['sections'] as List).expand((s) => s['transactions'] as List).toList();
+      expect(txns.length, 9);
+      expect(txns[4]['description'], 'ROW4 CARRIED');
+      expect(txns[5]['description'], 'ROW5');
+    });
+  });
+
+  group('label-date safety', () {
+    test('colons and dates inside narrations never end the table or drop rows (14 pages, header on page 1 only)', () {
+      final pages = <Page>[];
+      var row = 0;
+      for (var pn = 1; pn <= 14; pn++) {
+        final ws = <Word>[w('Branch', 40, 80, 40), w(':', 82, 85, 40), w('Main', 90, 120, 40)];
+        if (pn == 1) {
+          ws.addAll([w('Date', 40, 70, 80), w('Narration', 100, 160, 80), w('Debit', 300, 340, 80), w('Balance', 430, 480, 80)]);
+        }
+        var y = 100.0;
+        for (var i = 0; i < 12; i++, row++) {
+          ws.addAll([
+            w('0${row % 9 + 1}/06/2026', 40, 95, y),
+            w('UPI:$row', 100, 140, y), w('on', 142, 154, y), w('01/06/2026', 156, 205, y), w('ref:$row', 207, 245, y),
+            m('5.00', 340, y), m((900000 - row * 5).toStringAsFixed(2), 480, y),
+          ]);
+          y += 15;
+        }
+        pages.add(Page(pn, 612, 842, ws, []));
+      }
+      final res = parseDocument(makeDocument(pages));
+      final txns = [for (final s in res['sections'] as List) ...(s['transactions'] as List)];
+      expect(txns.length, 168);
+      expect({for (final t in txns) t['page']}.length, 14);
+    });
+  });
+
+  group('label-date stale position', () {
+    test('a Label : date line between rows does not make the next text line look like it left the table', () {
+      final ws = <Word>[w('Date', 40, 70, 80), w('Narration', 100, 160, 80), w('Debit', 300, 340, 80), w('Balance', 430, 480, 80)];
+      var y = 100.0;
+      for (var i = 0; i < 12; i++) {
+        ws.addAll([w('0${i % 9 + 1}/06/2026', 40, 95, y), w('ROW$i', 100, 135, y), m('5.00', 340, y), m((900000 - i * 5).toStringAsFixed(2), 480, y)]);
+        y += 15;
+        if (i == 4) {
+          // a period line with its date in the date column, then a wrapped text line 25 pt further down
+          ws.addAll([w('Stmt', 40, 56, y + 10), w(':', 58, 61, y + 10), w('01/06/2026', 63, 84, y + 10), w('NOTE$i', 100, 140, y + 35)]);
+          y += 50;
+        }
+      }
+      final res = parseDocument(makeDocument([Page(1, 612, 842, ws, [])]));
+      final txns = [for (final s in res['sections'] as List) ...(s['transactions'] as List)];
+      expect(txns.length, 12);
+    });
+  });
+
   group('column cuts', () {
     test('no empty gutter before the Ref column (one row touches it): the cut still falls in the least-covered gap, not mid-narration', () {
       final ws = <Word>[

@@ -305,6 +305,11 @@ final _leadJunk = RegExp(r'^[\d\s/.\-]+');
         continue;
       }
       final cells = assignCells(ln, cur.cm, locale, spaceGrouped);
+      if (_labelDateCell(cur.cm, cells, dcfg)) {
+        prevBottom = ln.bottom; // not a transaction line, but the table goes on right below it
+        meta.add(ln);
+        continue;
+      }
       final t = _toTLine(ln, cells, cur, dcfg);
       if (resumeCheck && t.kind == 'T' && t.special == null) {
         // after 'carried forward' the next page must continue with a row or 'brought forward'
@@ -358,6 +363,14 @@ String _descText(Cells cells, Line ln) {
   if (parts != null && parts.isNotEmpty) return parts.join(' ');
   // specials often print their label in the date/desc band
   return ln.text.replaceFirst(_leadJunk, '');
+}
+
+/// The date cell reads 'Label : dd/mm/yyyy' (the account block's period line starts inside the date column).
+/// A transaction's date cell begins with the date, so it never has a colon before it.
+bool _labelDateCell(ColumnModel cm, Cells cells, DateConfig dcfg) {
+  if (cm.get('date') == null || cells.dateText.isEmpty) return false;
+  final hits = findDates(cells.dateText, dcfg);
+  return hits.isNotEmpty && cells.dateText.substring(0, hits.first.start).contains(':');
 }
 
 TLine _toTLine(Line ln, Cells cells, Section sec, DateConfig dcfg) {
