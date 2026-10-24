@@ -3,6 +3,7 @@
 //   dart run bin/docstar_cli.dart --in <folder-or-file> --out <folder outside any git repo> [--visual] [--redact] [--engine] [--engine-masked] [--mask 3,4] [--banks <banks.json>]
 // --redact: shareable PNGs in <out>/redacted/ (blank canvas, words as black bars, no PDF pixels).
 // --mask 3,4: <out>/mask_<label>.json, masked word geometry of those pages (letters X, digits 9; column header names kept): shareable.
+// --engine --mask 3,4: also <out>/engine/<label>.trace.json, masked per-line view of what the engine did on those pages: shareable.
 // --engine-masked: also <out>/engine/<label>.masked.json, the same JSON with content masked (letters X, digits 9; column header names kept): shareable.
 // --engine: statement JSON (parseDocument output) per file in <out>/engine/ (contains transactions: keep local).
 // Passwords: hidden TTY prompt only. Never args, never stored, never written.
@@ -334,7 +335,12 @@ Future<Map<String, Object?>> _measure(String path, String name, String label, St
       }
       if (engineDir != null) {
         // label, not the real name: the engine JSON's `file` field must not carry it
-        final res = eng.parseDocument(documentFromCore(laid, path: label), banks: banks);
+        final edoc = documentFromCore(laid, path: label);
+        final res = eng.parseDocument(edoc, banks: banks);
+        if (maskFile != null) {
+          File('$engineDir/$label.trace.json').writeAsStringSync(jsonEncode(traceEngine(edoc, maskPages)));
+          stdout.writeln('  engine trace: wrote $engineDir/$label.trace.json (masked line-by-line view of pages $maskPages)');
+        }
         File('$engineDir/$label.json').writeAsStringSync(const JsonEncoder.withIndent('  ').convert(res));
         if (engineMasked) {
           File('$engineDir/$label.masked.json').writeAsStringSync(const JsonEncoder.withIndent('  ').convert(maskEngine(res)));
