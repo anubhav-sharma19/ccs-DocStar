@@ -1,7 +1,8 @@
 // DocStar CLI (macOS): batch metrics for local PDFs; --visual draws layout overlays
 // (words, lines, blocks, table grids; see lib/overlay.dart for the colours).
-//   dart run bin/docstar_cli.dart --in <folder-or-file> --out <folder outside any git repo> [--visual] [--redact] [--engine] [--banks <banks.json>]
+//   dart run bin/docstar_cli.dart --in <folder-or-file> --out <folder outside any git repo> [--visual] [--redact] [--engine] [--mask 3,4] [--banks <banks.json>]
 // --redact: shareable PNGs in <out>/redacted/ (blank canvas, words as black bars, no PDF pixels).
+// --mask 3,4: <out>/mask_<label>.json, masked word geometry of those pages (letters X, digits 9): shareable.
 // --engine: statement JSON (parseDocument output) per file in <out>/engine/ (contains transactions: keep local).
 // Passwords: hidden TTY prompt only. Never args, never stored, never written.
 // metrics.json: labels + numbers + codepoint counts only. No names, paths, text or hashes.
@@ -14,6 +15,7 @@ import 'package:crypto/crypto.dart';
 import 'package:docstar_cli/overlay.dart';
 import 'package:docstar_cli/transformed.dart';
 import 'package:docstar_cli/engine_bridge.dart';
+import 'package:docstar_cli/mask.dart';
 import 'package:docstar_core/docstar_core.dart';
 import 'package:docstar_engine/docstar_engine.dart' as eng;
 import 'package:docstar_pdfium/docstar_pdfium.dart';
@@ -27,6 +29,7 @@ Never _die(String msg) {
 Future<void> main(List<String> args) async {
   String? inArg, outArg;
   var visual = false, redact = false, engine = false;
+  Set<int> maskPages = {};
   var bankPath = '../../packages/docstar_engine/assets/banks.json';
   for (var i = 0; i < args.length; i++) {
     switch (args[i]) {
@@ -40,6 +43,8 @@ Future<void> main(List<String> args) async {
         redact = true;
       case '--engine':
         engine = true;
+      case '--mask':
+        maskPages = {for (final n in (i + 1 < args.length ? args[++i] : '').split(',')) if (int.tryParse(n) != null) int.parse(n)};
       case '--banks':
         bankPath = i + 1 < args.length ? args[++i] : bankPath;
       // Deliberately not echoed: an unknown arg could be a password.
@@ -82,7 +87,8 @@ Future<void> main(List<String> args) async {
     names.add(files[i].split(Platform.pathSeparator).last);
     stdout.writeln('[$label] ${names.last}');
     results.add(await _measure(files[i], names.last, label, visual ? '$outArg/visual/$label' : null,
-        redact ? '$outArg/redacted/$label' : null, engineDir: engineDir, banks: banks));
+        redact ? '$outArg/redacted/$label' : null, engineDir: engineDir, banks: banks,
+        maskFile: maskPages.isEmpty ? null : '$outArg/mask_$label.json', maskPages: maskPages));
   }
 
   File('$outArg/metrics.json').writeAsStringSync(const JsonEncoder.withIndent('  ').convert({
@@ -202,7 +208,7 @@ Future<bool> _hasInk(PdfPage p) async {
 }
 
 Future<Map<String, Object?>> _measure(String path, String name, String label, String? visualDir, String? redactDir,
-    {String? engineDir, List<Map<String, dynamic>> banks = const []}) async {
+    {String? engineDir, List<Map<String, dynamic>> banks = const [], String? maskFile, Set<int> maskPages = const {}}) async {
   final m = <String, Object?>{'file': label, 'size_kb': File(path).lengthSync() ~/ 1024};
   m['encryption'] = _encryption(File(path).readAsBytesSync());
   final rss0 = ProcessInfo.currentRss;
@@ -315,6 +321,7 @@ Future<Map<String, Object?>> _measure(String path, String name, String label, St
         File('$visualDir/transformed.json').writeAsStringSync(const JsonEncoder.withIndent('  ').convert(transformed(laid)));
       }
       if (redactDir != null) await drawOverlays(doc, laid, redactDir, redact: true);
+      if (maskFile != null) File(maskFile).writeAsStringSync(const JsonEncoder.withIndent(' ').convert(maskDump(laid, maskPages)));
       if (engineDir != null) {
         // label, not the real name: the engine JSON's `file` field must not carry it
         final res = eng.parseDocument(documentFromCore(laid, path: label), banks: banks);
