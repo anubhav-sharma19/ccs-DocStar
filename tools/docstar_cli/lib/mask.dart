@@ -23,3 +23,17 @@ Map<String, Object?> maskDump(DsDocument doc, Set<int> pages) => {
             }
       ],
     };
+
+/// Keys whose string values carry statement content; everything else (roles, flags, pages, counts) stays.
+const _content = {
+  'description', 'reference', 'text', 'debit', 'credit', 'amount', 'balance', 'account_last4', 'file', 'name', 'opening',
+  'closing', 'computed_closing', 'credits', 'debits', 'value_date', 'date', 'from', 'to',
+};
+
+/// A copy of the engine JSON with content strings masked (letters -> X, digits -> 9, punctuation kept), safe to share.
+Object? maskEngine(Object? v, [String? key, bool all = false]) => switch (v) {
+      Map m => {for (final e in m.entries) e.key: maskEngine(e.value, e.key as String, all || e.key == 'extra')},
+      List l => [for (final x in l) maskEngine(x, key, all)],
+      String s when all || (key != null && _content.contains(key)) => _mask(s),
+      _ => v,
+    };
