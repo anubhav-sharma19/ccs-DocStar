@@ -60,6 +60,7 @@ Future<void> main(List<String> args) async {
       ? [for (final b in (jsonDecode(File(bankPath).readAsStringSync()) as Map<String, dynamic>)['banks'] as List) b as Map<String, dynamic>]
       : const <Map<String, dynamic>>[];
   _refuseInsideGit(outArg);
+  if (args.contains('--mask') && maskPages.isEmpty) _die('--mask needs page numbers, e.g. --mask 3,4 (no spaces).');
 
   final files = FileSystemEntity.isDirectorySync(inArg)
       ? (Directory(inArg).listSync(recursive: true, followLinks: false).whereType<File>().map((f) => f.path).where((p) => p.toLowerCase().endsWith('.pdf')).toList()..sort())
@@ -321,7 +322,11 @@ Future<Map<String, Object?>> _measure(String path, String name, String label, St
         File('$visualDir/transformed.json').writeAsStringSync(const JsonEncoder.withIndent('  ').convert(transformed(laid)));
       }
       if (redactDir != null) await drawOverlays(doc, laid, redactDir, redact: true);
-      if (maskFile != null) File(maskFile).writeAsStringSync(const JsonEncoder.withIndent(' ').convert(maskDump(laid, maskPages)));
+      if (maskFile != null) {
+        final dump = maskDump(laid, maskPages);
+        File(maskFile).writeAsStringSync(jsonEncode(dump));
+        stdout.writeln('  mask: wrote $maskFile (${(dump['pages'] as List).length} of ${maskPages.length} pages found)');
+      }
       if (engineDir != null) {
         // label, not the real name: the engine JSON's `file` field must not carry it
         final res = eng.parseDocument(documentFromCore(laid, path: label), banks: banks);
