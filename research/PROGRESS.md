@@ -167,6 +167,11 @@ Result: G1 944/944 identical (corpus 472, holdout 472). run_eval: corpus 99.8% p
 
 Deliberate deviation: `parseAmount("$")` returns null (Python raises IndexError). Not done: G2/G3 (need the adapter), isolate wrapper, wiring into Finora / Pocket Proof.
 
+## Engine output: page-break and header names (2026-10-24)
+
+- Carried narration longer than the columns (runs under the amount columns) was dropped on a headless page: lead-line rule in `docstar_core` `_buildPage` required exactly one column band, now at least one. Tests added (core 78).
+- Engine sections now carry `column_headers` (`{role, header}` with the header as printed) next to the standardized `columns`. Additive; the golden harness ignores it, G1 still 944/944. Output format for consumers (humans and AI): `packages/docstar_engine/OUTPUT.md`.
+
 ## Open items
 
 - **iOS/macOS Flutter apps still fetch PDFium via pdfium_flutter podspec. Must vendor + hash-pin before Finora iOS build.**

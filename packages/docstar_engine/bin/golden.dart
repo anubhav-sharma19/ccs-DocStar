@@ -51,6 +51,10 @@ void main(List<String> args) {
     final doc = loadWords(jsonDecode(f.readAsStringSync()) as Map<String, dynamic>);
     final res = parseDocument(doc, banks: banks);
     final pred = jsonDecode(jsonEncode({for (final k in keep) if (res.containsKey(k)) k: res[k]})) as Map<String, dynamic>;
+    // column_headers is additive (no Python counterpart): checked by engine_test, not by the golden diff.
+    for (final s in (pred['sections'] as List? ?? const [])) {
+      (s as Map).remove('column_headers');
+    }
     File('${out.path}/$stem.pred.json').writeAsStringSync(jsonEncode(pred));
     final exp = jsonDecode(File('${dir.path}/$stem.expected.json').readAsStringSync()) as Map<String, dynamic>;
     if (exp['bank'] is Map && (exp['bank'] as Map)['source'] == 'ml') {

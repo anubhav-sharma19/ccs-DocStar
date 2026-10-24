@@ -595,23 +595,49 @@ void computeCuts(List<Line> lines, ColumnModel cm) {
     final a = cm.cols[i], b = cm.cols[i + 1];
     final s0 = math.min(a.center, a.x0 + 6).truncate() - lo;
     final s1 = math.max(b.x0, b.numeric ? b.center : b.x0 + 4).truncate() - lo;
-    double? best;
-    int? runS;
-    var bestW = 0;
-    for (var x = math.max(0, s0); x < math.min(cov.length, s1 + 1); x++) {
-      if (cov[x] <= thr) {
-        runS ??= x;
-        final wdt = x - runS + 1;
-        if (wdt > bestW) {
-          bestW = wdt;
-          best = (runS + x) / 2;
+    final from = math.max(0, s0), to = math.min(cov.length, s1 + 1);
+    // widest run of x with at most [limit] lines over it, as (start, end)
+    (int, int)? widest(int limit) {
+      (int, int)? out;
+      int? runS;
+      for (var x = from; x < to; x++) {
+        if (cov[x] <= limit) {
+          runS ??= x;
+          if (out == null || x - runS > out.$2 - out.$1) out = (runS, x);
+        } else {
+          runS = null;
         }
-      } else {
-        runS = null;
+      }
+      return out;
+    }
+
+    var run = widest(thr);
+    if (run == null || run.$2 - run.$1 + 1 < 6) {
+      // a clean run this narrow may be a gap between words: one stray line over a wide gutter beats it
+      var loose = widest(thr + 1);
+      if (loose == null && from < to) {
+        final least = cov.getRange(from, to).reduce(math.min);
+        if (least > thr + 1) loose = widest(least);
+      }
+      if (loose != null && loose.$2 - loose.$1 > 2 * ((run?.$2 ?? 0) - (run?.$1 ?? 0))) {
+        // centre on the emptiest part of the run, so a narration tail beside the gutter cannot drag the cut
+        final m = cov.getRange(loose.$1, loose.$2 + 1).reduce(math.min);
+        (int, int)? core;
+        int? coreS;
+        for (var x = loose.$1; x <= loose.$2; x++) {
+          if (cov[x] == m) {
+            coreS ??= x;
+            if (core == null || x - coreS > core.$2 - core.$1) core = (coreS, x);
+          } else {
+            coreS = null;
+          }
+        }
+        run = core != null && core.$2 - core.$1 >= 3 ? core : loose;
       }
     }
+    final best = run == null ? null : (run.$1 + run.$2) / 2, bestW = run == null ? 0 : run.$2 - run.$1 + 1;
     if (best != null && bestW >= 2) {
-      cuts.add(best + lo);
+      cuts.add(best! + lo);
     } else {
       cuts.add(cm.cuts == null ? cm.cut(i) : (a.x1 + b.x0) / 2);
     }

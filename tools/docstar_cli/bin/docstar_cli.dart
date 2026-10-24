@@ -1,7 +1,8 @@
 // DocStar CLI (macOS): batch metrics for local PDFs; --visual draws layout overlays
 // (words, lines, blocks, table grids; see lib/overlay.dart for the colours).
-//   dart run bin/docstar_cli.dart --in <folder-or-file> --out <folder outside any git repo> [--visual] [--redact]
+//   dart run bin/docstar_cli.dart --in <folder-or-file> --out <folder outside any git repo> [--visual] [--redact] [--engine] [--banks <banks.json>]
 // --redact: shareable PNGs in <out>/redacted/ (blank canvas, words as black bars, no PDF pixels).
+// --engine: statement JSON (parseDocument output) per file in <out>/engine/ (contains transactions: keep local).
 // Passwords: hidden TTY prompt only. Never args, never stored, never written.
 // metrics.json: labels + numbers + codepoint counts only. No names, paths, text or hashes.
 import 'dart:convert';
@@ -12,7 +13,9 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:docstar_cli/overlay.dart';
 import 'package:docstar_cli/transformed.dart';
+import 'package:docstar_cli/engine_bridge.dart';
 import 'package:docstar_core/docstar_core.dart';
+import 'package:docstar_engine/docstar_engine.dart' as eng;
 import 'package:docstar_pdfium/docstar_pdfium.dart';
 import 'package:pdfrx_engine/pdfrx_engine.dart';
 
@@ -23,7 +26,8 @@ Never _die(String msg) {
 
 Future<void> main(List<String> args) async {
   String? inArg, outArg;
-  var visual = false, redact = false;
+  var visual = false, redact = false, engine = false;
+  var bankPath = '../../packages/docstar_engine/assets/banks.json';
   for (var i = 0; i < args.length; i++) {
     switch (args[i]) {
       case '--in':
@@ -34,13 +38,22 @@ Future<void> main(List<String> args) async {
         visual = true;
       case '--redact':
         redact = true;
+      case '--engine':
+        engine = true;
+      case '--banks':
+        bankPath = i + 1 < args.length ? args[++i] : bankPath;
       // Deliberately not echoed: an unknown arg could be a password.
       default:
-        _die('Unknown argument. Usage: --in <folder-or-file> --out <folder> [--visual] [--redact]\n'
+        _die('Unknown argument. Usage: --in <folder-or-file> --out <folder> [--visual] [--redact] [--engine] [--banks <banks.json>]\n'
             'Passwords are never accepted as arguments; you are prompted when needed.');
     }
   }
-  if (inArg == null || outArg == null) _die('Usage: dart run bin/docstar_cli.dart --in <folder-or-file> --out <folder> [--visual] [--redact]');
+  if (inArg == null || outArg == null) {
+    _die('Usage: dart run bin/docstar_cli.dart --in <folder-or-file> --out <folder> [--visual] [--redact] [--engine] [--banks <banks.json>]');
+  }
+  final banks = engine
+      ? [for (final b in (jsonDecode(File(bankPath).readAsStringSync()) as Map<String, dynamic>)['banks'] as List) b as Map<String, dynamic>]
+      : const <Map<String, dynamic>>[];
   _refuseInsideGit(outArg);
 
   final files = FileSystemEntity.isDirectorySync(inArg)
@@ -50,6 +63,8 @@ Future<void> main(List<String> args) async {
           : _die('--in not found');
   if (files.isEmpty) _die('No PDFs found.');
   Directory(outArg).createSync(recursive: true);
+  final engineDir = engine ? '$outArg/engine' : null;
+  if (engineDir != null) Directory(engineDir).createSync(recursive: true);
 
   // Ctrl-C during the hidden prompt would leave the terminal with echo off.
   final sigint = ProcessSignal.sigint.watch().listen((_) {
@@ -67,7 +82,7 @@ Future<void> main(List<String> args) async {
     names.add(files[i].split(Platform.pathSeparator).last);
     stdout.writeln('[$label] ${names.last}');
     results.add(await _measure(files[i], names.last, label, visual ? '$outArg/visual/$label' : null,
-        redact ? '$outArg/redacted/$label' : null));
+        redact ? '$outArg/redacted/$label' : null, engineDir: engineDir, banks: banks));
   }
 
   File('$outArg/metrics.json').writeAsStringSync(const JsonEncoder.withIndent('  ').convert({
@@ -80,6 +95,9 @@ Future<void> main(List<String> args) async {
   _table(results, names);
   stdout.writeln('\nWrote $outArg/metrics.json (no filenames inside). MB = sampled in-process RSS: earlier files inflate the baseline.');
   await sigint.cancel(); // an active signal listener would keep the process alive
+  if (engineDir != null) {
+    stdout.writeln('Statement JSON in $engineDir/ (file_NN.json) contains transactions and narrations. Keep it local.');
+  }
   if (visual) {
     stdout.writeln('Visual overlays (page_N.png) and table text (transformed.json) in $outArg/visual/ contain your document content. Keep them local.');
   }
@@ -183,7 +201,8 @@ Future<bool> _hasInk(PdfPage p) async {
   }
 }
 
-Future<Map<String, Object?>> _measure(String path, String name, String label, String? visualDir, String? redactDir) async {
+Future<Map<String, Object?>> _measure(String path, String name, String label, String? visualDir, String? redactDir,
+    {String? engineDir, List<Map<String, dynamic>> banks = const []}) async {
   final m = <String, Object?>{'file': label, 'size_kb': File(path).lengthSync() ~/ 1024};
   m['encryption'] = _encryption(File(path).readAsBytesSync());
   final rss0 = ProcessInfo.currentRss;
@@ -296,6 +315,11 @@ Future<Map<String, Object?>> _measure(String path, String name, String label, St
         File('$visualDir/transformed.json').writeAsStringSync(const JsonEncoder.withIndent('  ').convert(transformed(laid)));
       }
       if (redactDir != null) await drawOverlays(doc, laid, redactDir, redact: true);
+      if (engineDir != null) {
+        // label, not the real name: the engine JSON's `file` field must not carry it
+        final res = eng.parseDocument(documentFromCore(laid, path: label), banks: banks);
+        File('$engineDir/$label.json').writeAsStringSync(const JsonEncoder.withIndent('  ').convert(res));
+      }
     }
   } finally {
     await doc.dispose();

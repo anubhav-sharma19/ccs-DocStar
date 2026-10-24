@@ -195,6 +195,41 @@ void main() {
       expect(t.cell(2, 1).text, 'UPI/1001/SHOP X');
     });
 
+    test('a narration longer than most rows keeps all its words in one cell (tail and head)', () {
+      T at(double x, double y, String s) => T(x, y, s);
+      for (final rightAligned in [false, true]) {
+        final long = rightAligned ? 'INCOMES TAX REFUND ASSESSMENT' : 'INCOMES TAX REFUND ASSESSMENT REF 20260606';
+        final texts = <T>[
+          at(xDate, 120, 'Date'), at(rightAligned ? 300 : xDesc, 120, 'Narration'), r(rDebit, 120, 'Debit'), r(rCredit, 120, 'Credit'), r(rBal, 120, 'Balance'),
+        ];
+        var y = 134.0;
+        for (var i = 0; i < 7; i++, y += 14) {
+          final n = i == 3 ? long : 'ROW $i';
+          texts..add(at(xDate, y, '0${i + 1}/06/2026'))..add(rightAligned ? r(340, y, n) : at(xDesc, y, n))..add(i == 3 ? r(rCredit, y, '100.00') : r(rDebit, y, '100.00'))..add(r(rBal, y, '5,000.00'));
+        }
+        final t = onlyTable(layout([page(1, texts)]));
+        expect(t.rowTexts(4), ['04/06/2026', long, '', '100.00', '5,000.00'], reason: 'rightAligned=$rightAligned');
+      }
+    });
+
+    test('a wrapped line running under the amount columns stays one cell and keeps the table whole', () {
+      T at(double x, double y, String s) => T(x, y, s);
+      final texts = <T>[
+        at(xDate, 120, 'Date'), at(xDesc, 120, 'Description'), r(rDebit, 120, 'Debit'), r(rCredit, 120, 'Credit'), r(rBal, 120, 'Balance'),
+      ];
+      var y = 134.0;
+      for (var i = 0; i < 6; i++, y += 14) {
+        texts..add(at(xDate, y, '0${i + 1}/06/2026'))..add(at(xDesc, y, 'ROW $i'))..add(r(rDebit, y, '100.00'))..add(r(rBal, y, '5,000.00'));
+        if (i == 2) {
+          texts..add(at(xDesc, y + 12, 'INCOMES TAX REFUND ASSESSMENT YEAR 2025-26 DEPT OF'))..add(at(xDesc, y + 24, 'END'));
+          y += 24;
+        }
+      }
+      final t = onlyTable(layout([page(1, texts)]));
+      expect(t.rows, 7);
+      expect(t.rowTexts(3), ['03/06/2026', 'ROW 2 INCOMES TAX REFUND ASSESSMENT YEAR 2025-26 DEPT OF END', '100.00', '', '5,000.00']);
+    });
+
     test('wrapped lines spaced like rows (gap > 1 line height) still join their row', () {
       for (final before in [false, true]) {
         final hints = before
@@ -396,6 +431,15 @@ void main() {
           expect(t.continuesFrom, stmt[0].id);
           expect(t.continuesRow, isTrue);
           expect(t.rowTexts(header ? 1 : 0), ['', 'REST OF NARRATION', '', '', '']);
+        });
+      }
+      for (final header in [false, true]) {
+        test('a carried narration running under the amount columns still joins its row (${header ? 'repeated header' : 'headless'})', () {
+          const long = 'REST OF NARRATION OF A VERY LONG UPI TRANSFER REF 12345678 TO SOME PAYEE NAME LTD';
+          final tables = layout(statement(pages: 2, repeatHeader: header, carryOver: long)).tables.toList();
+          final t = tables[1];
+          expect(t.continuesRow, isTrue);
+          expect(t.rowTexts(header ? 1 : 0), ['', long, '', '', '']);
         });
       }
       test('negative: a line two blank lines above the table stays text', () {

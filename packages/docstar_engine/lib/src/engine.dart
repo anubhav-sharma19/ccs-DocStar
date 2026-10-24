@@ -492,6 +492,8 @@ Map<String, dynamic> parseDocument(Document doc, {Banks banks = const []}) {
     final checks = reconcileSection(txns, specials);
     resultSections.add({
       'columns': s.cm.roles(),
+      // Additive (not in the Python reference): the header text as printed, one entry per column, same order as `columns`.
+      'column_headers': [for (final c in s.cm.cols) {'role': c.role, 'header': c.text.isEmpty ? null : c.text}],
       'mode': {...mode, 'grid': groups != null},
       'opening': checks['opening'],
       'closing': checks['closing'],

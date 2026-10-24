@@ -36,9 +36,12 @@ List<Word> statement(List<(String, String, String?, String?, String?)> rows, {St
   return ws;
 }
 
+String _money(int rupees) => '${rupees ~/ 1000},${(rupees % 1000).toString().padLeft(3, '0')}.00';
+
 Map<String, dynamic> parse(List<Word> words) => parseDocument(makeDocument([page(words)]));
 
 void main() {
+  pageBreakTests();
   group('extract', () {
     test('buildLines groups by baseline, orders left to right, and keeps overlapping text on another line', () {
       final doc = makeDocument([
@@ -58,6 +61,42 @@ void main() {
       final doc = makeDocument([page(statement([('01/01/2024', 'ATM', '5.00', null, '95.00')]))]);
       final again = loadWords(dumpWords(doc));
       expect(again.pages.first.lines.map((l) => l.text), doc.pages.first.lines.map((l) => l.text));
+    });
+  });
+
+  group('column_headers', () {
+    test('keeps the printed header next to the standardized role', () {
+      final res = parse(statement([('01/01/2024', 'ATM', '5.00', null, '95.00'), ('02/01/2024', 'POS', '5.00', null, '90.00')], opening: '100.00'));
+      final s = (res['sections'] as List).first as Map;
+      expect(s['column_headers'], [
+        {'role': 'date', 'header': 'Date'}, {'role': 'desc', 'header': 'Narration'},
+        {'role': 'debit', 'header': 'Debit'}, {'role': 'credit', 'header': 'Credit'}, {'role': 'balance', 'header': 'Balance'},
+      ]);
+      expect((s['column_headers'] as List).map((c) => (c as Map)['role']), s['columns']);
+    });
+  });
+
+  group('column cuts', () {
+    test('no empty gutter before the Ref column (one row touches it): the cut still falls in the least-covered gap, not mid-narration', () {
+      final ws = <Word>[
+        w('ACME', 40, 70, 40), w('BANK', 75, 105, 40),
+        w('Date', 40, 70, 100), w('Narration', 100, 160, 100), w('Chq./Ref.No.', 285, 345, 100), w('Debit', 400, 440, 100), w('Balance', 500, 540, 100),
+      ];
+      for (var i = 0; i < 5; i++) {
+        final y = 120.0 + 15 * i;
+        ws.addAll([
+          w('0${i + 1}/06/26', 40, 85, y),
+          w('UPI-SHOP', 100, 150, y), w('LONG', 155, 190, y), w('NARRATION', 195, 225, y), w('ARE', 230, 252, y),
+          if (i == 2) w('TOUCH', 254, 284, y), // fills the gutter in one row
+          w('0000123456', 285, 340, y), m('100.00', 440, y), m(_money(10000 - 100 * (i + 1)), 540, y),
+        ]);
+      }
+      final txns = (parse(ws)['sections'] as List).expand((s) => s['transactions'] as List).toList();
+      expect(txns.map((t) => t['description']), [
+        'UPI-SHOP LONG NARRATION ARE', 'UPI-SHOP LONG NARRATION ARE', 'UPI-SHOP LONG NARRATION ARE TOUCH',
+        'UPI-SHOP LONG NARRATION ARE', 'UPI-SHOP LONG NARRATION ARE',
+      ]);
+      expect(txns.map((t) => t['reference']).toSet(), {'0000123456'});
     });
   });
 
@@ -182,5 +221,43 @@ void main() {
       expect(res['quality']['status'], 'review');
       expect(res['quality']['unreadable_pages'], 1);
     });
+  });
+}
+
+// Page-break repro: last row of page 1 continues at the top of page 2 under a repeated header.
+void pageBreakTests() {
+  group('page break narration', () {
+    List<Word> pg(int from, int n, {String? tail, String? head}) {
+      final ws = <Word>[
+        w('ACME', 40, 70, 40), w('BANK', 75, 105, 40),
+        w('Date', 40, 70, 100), w('Narration', 100, 160, 100), w('Debit', 300, 340, 100), w('Credit', 360, 400, 100), w('Balance', 430, 480, 100),
+      ];
+      var y = 120.0;
+      if (head != null) {
+        ws.addAll([for (final (i, p) in head.split(' ').indexed) w(p, 100 + 40.0 * i, 135 + 40.0 * i, y)]);
+        y += 10;
+      }
+      for (var i = from; i < from + n; i++) {
+        ws.addAll([w('${(i % 28 + 1).toString().padLeft(2, '0')}/06/2026', 40, 95, y), w('ROW$i', 100, 135, y), m('100.00', 340, y), m(_money(10000 - 100 * (i + 1)), 480, y)]);
+        if (i == from + n - 1 && tail != null) {
+          ws.addAll([for (final (k, p) in tail.split(' ').indexed) w(p, 140 + 40.0 * k, 175 + 40.0 * k, y)]);
+        }
+        y += 10;
+      }
+      return ws;
+    }
+
+    for (final tail in [null, 'FIRSTHALF']) {
+      test('continuation at top of page 2 joins the last row of page 1 (tail on date line: $tail)', () {
+        final res = parseDocument(makeDocument([
+          page(pg(0, 8, tail: tail), n: 1),
+          page(pg(8, 8, head: 'SECONDHALF REF99'), n: 2),
+        ]));
+        final txns = (res['sections'] as List).expand((s) => s['transactions'] as List).toList();
+        expect(txns.length, 16);
+        expect(txns[7]['description'], contains('SECONDHALF'));
+        expect(txns[8]['description'], 'ROW8');
+      });
+    }
   });
 }

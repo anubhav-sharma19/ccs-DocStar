@@ -534,9 +534,10 @@ _PageBuild _buildPage(
     var fits = cur != null && !isSection(l) && l.box.top - prev!.box.bottom <= cfg.tableMaxGapLines * p.lineHeight;
     final add = <_Range>[];
     if (fits && !rowLike) {
-      fits = _hits(segs.first, cur.bands).length == 1 &&
-          l.box.top - prev.box.bottom <= contGap;
-      add.addAll(segs);
+      // One unbroken run is a wrapped narration, even when it runs on under the amount columns.
+      final hits = _hits(segs.first, cur.bands).length;
+      fits = hits >= 1 && l.box.top - prev.box.bottom <= contGap;
+      if (hits == 1) add.addAll(segs);
     } else if (fits) {
       final bands = cur.bands;
       for (final s in segs) {
@@ -612,7 +613,7 @@ _PageBuild _buildPage(
         if (segs.length != 1 ||
             tall(l) ||
             isSection(l) ||
-            _hits(segs.first, run.bands).length != 1 ||
+            _hits(segs.first, run.bands).isEmpty || // one unbroken run may span several columns
             next.box.top - l.box.bottom > contGap) {
           break;
         }
@@ -835,14 +836,20 @@ bool _colsMatch(List<_Range> a, List<_Range> b, double tol) {
 }
 
 /// TR6: a word goes to the column holding more than [overlap] of its width; when
-/// it straddles, to the column holding its centre; else the nearest column.
-int _column(Box w, List<_Range> cols, double overlap) {
+/// it straddles, to the column holding its centre; else null (it sits in no column).
+int? _columnOrNull(Box w, List<_Range> cols, double overlap) {
   final width = math.max(w.width, 0.01);
   final hit = [for (var i = 0; i < cols.length; i++) if (w.hOverlap(cols[i].left, cols[i].right) / width > overlap) i];
   if (hit.length == 1) return hit.first;
   final centre = cols.indexWhere((c) => w.cx >= c.left && w.cx <= c.right);
   if (centre >= 0) return centre;
-  if (hit.isNotEmpty) return hit.first;
+  return hit.isNotEmpty ? hit.first : null;
+}
+
+/// [_columnOrNull], else the nearest column.
+int _column(Box w, List<_Range> cols, double overlap) {
+  final c = _columnOrNull(w, cols, overlap);
+  if (c != null) return c;
   var best = 0;
   var bestD = double.infinity;
   for (var i = 0; i < cols.length; i++) {
@@ -854,6 +861,9 @@ int _column(Box w, List<_Range> cols, double overlap) {
   }
   return best;
 }
+
+/// A printed amount: digits with a decimal point or thousands commas, optional sign, brackets, Cr/Dr.
+final _amountRx = RegExp(r'^[-+(]?\d[\d,]*[.,]\d+\)?(cr|dr)?$', caseSensitive: false);
 
 class _Grid {
   final List<List<List<_Word>>> grid; // rows x cols x words
@@ -869,10 +879,54 @@ class _Grid {
 _Grid _grid(_Prepared p, List<_Line> lines, List<_Range> cols, _Line? header, TableHints? hints,
     LayoutConfig cfg, bool anchored) {
   final colOf = <_Word, int>{for (final l in lines) for (final w in l.words) w: _column(w.box, cols, cfg.cellOverlap)};
+  // A word in no column (the tail or head of a narration longer than most rows) stays with the
+  // nearest word of its own unbroken run that does have one, not with the nearest column.
+  final gap = cfg.colGapPitch * p.pitch;
+  for (final l in lines) {
+    var from = 0;
+    for (var i = 1; i <= l.words.length; i++) {
+      if (i < l.words.length && l.words[i].box.left - l.words[i - 1].box.right <= gap) continue;
+      final run = l.words.sublist(from, i);
+      from = i;
+      final known = [for (var k = 0; k < run.length; k++) if (_columnOrNull(run[k].box, cols, cfg.cellOverlap) != null) k];
+      if (known.isEmpty) continue;
+      for (var k = 0; k < run.length; k++) {
+        if (!known.contains(k)) colOf[run[k]] = colOf[run[known.reduce((a, b) => (b - k).abs() < (a - k).abs() ? b : a)]]!;
+      }
+    }
+  }
   bool starts(_Line l) {
     final re = hints?.rowStart;
     if (re != null) return re.matchAsPrefix(l.text) != null;
     return l.words.any((w) => colOf[w] == 0);
+  }
+
+  // Text that runs on from a text column into an amount column is still narration: in a column
+  // that holds mostly amounts, a non-amount word follows the word before it in its unbroken run.
+  final amounts = List.filled(cols.length, 0), texts = List.filled(cols.length, 0);
+  for (final l in lines) {
+    for (final w in l.words) {
+      (_amountRx.hasMatch(w.text) ? amounts : texts)[colOf[w]!]++;
+    }
+  }
+  bool numeric(int c) => amounts[c] > texts[c];
+  for (final l in lines) {
+    for (var i = 1; i < l.words.length; i++) {
+      final w = l.words[i], prev = l.words[i - 1];
+      if (w.box.left - prev.box.right <= gap && numeric(colOf[w]!) && !_amountRx.hasMatch(w.text) && !numeric(colOf[prev]!)) {
+        colOf[w] = colOf[prev]!;
+      }
+    }
+  }
+
+  // A wrapped line (one unbroken run, no row start) is one cell: its overflow stays with its first word.
+  final segGap = cfg.colGapPitch * p.pitch;
+  for (final l in lines) {
+    if (l != header && !starts(l) && _segments(l, segGap).length == 1) {
+      for (final w in l.words) {
+        colOf[w] = colOf[l.words.first]!;
+      }
+    }
   }
 
   final rows = <List<_Line>>[];

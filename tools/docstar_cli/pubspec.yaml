@@ -12,6 +12,8 @@ dependencies:
     path: ../../packages/docstar_core
   docstar_pdfium:
     path: ../../packages/docstar_pdfium
+  docstar_engine:
+    path: ../../packages/docstar_engine
   crypto: ^3.0.7
   image: ^4.8.0
 
