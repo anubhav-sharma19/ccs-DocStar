@@ -542,7 +542,12 @@ _PageBuild _buildPage(
     if (tall(l)) continue;
     final segs = _segments(l, segGap);
     final rowLike = segs.length >= 2;
-    var fits = cur != null && !isSection(l) && l.box.top - prev!.box.bottom <= cfg.tableMaxGapLines * p.lineHeight;
+    // A row on the previous table's columns does not continue a run that is not on them (an account-info
+    // block above the statement), however close it sits.
+    var fits = cur != null &&
+        !isSection(l) &&
+        l.box.top - prev!.box.bottom <= cfg.tableMaxGapLines * p.lineHeight &&
+        !(rowLike && !onPrevCols(cur.bands) && onPrevCols(segs));
     final add = <_Range>[];
     if (fits && !rowLike) {
       // One unbroken run is a wrapped narration, even when it runs on under the amount columns.

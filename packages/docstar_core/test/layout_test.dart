@@ -461,6 +461,21 @@ void main() {
         expect(t.rowTexts(0), ['', 'CARRIED ONE CARRIED TWO', '', '', '']);
         expect(t.rowTexts(1), ['05/07/2026', 'UPI/ROW WRAPPED ONE WRAPPED TWO', '9.00', '', '99.00']);
       });
+      test('an account block right above the first rows of a continuing page does not swallow them', () {
+        // The block's last line is closer to the first row than the statement's own wrap spacing allows to tell apart.
+        final p1 = statement(pages: 1, rowPitch: 18, wrapEvery: 3, wrapPitch: 18).single;
+        final texts = <T>[
+          const T(50, 40, 'DOCSTAR TEST BANK - ACCOUNT STATEMENT'),
+          for (var i = 0; i < 8; i++) ...[T(50, 60.0 + 14 * i, 'Account Field $i :'), T(330, 60.0 + 14 * i, 'VALUE $i')],
+          for (var i = 0; i < 8; i++) ...[
+            T(xDate, 176.0 + 18 * i, '0${i + 1}/07/2026'), T(xDesc, 176.0 + 18 * i, 'UPI/ROW$i'), r(rDebit, 176.0 + 18 * i, '9.00'), r(rBal, 176.0 + 18 * i, '99.00'),
+          ],
+        ];
+        final doc = layout([p1, page(2, texts)]);
+        final t = [for (final x in doc.tables) if (x.cols == 5) x].last;
+        expect(t.continuesFrom, isNotNull);
+        expect([for (var r = 0; r < t.rows; r++) t.rowTexts(r)[0]], [for (var i = 0; i < 8; i++) '0${i + 1}/07/2026']);
+      });
       test('negative: a line two blank lines above the table stays text', () {
         final p1 = statement(pages: 1).single;
         final p2 = page(2, [
