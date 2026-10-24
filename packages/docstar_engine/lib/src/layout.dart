@@ -635,6 +635,25 @@ void computeCuts(List<Line> lines, ColumnModel cm) {
         run = core != null && core.$2 - core.$1 >= 3 ? core : loose;
       }
     }
+    // The narration has gaps between its words; the next text column's data starts at its header edge.
+    // An empty gap ending right there is the gutter, even when narrower than those word gaps.
+    // ponytail: 12 px = widest word gap still doubted; raise if a statement's gutter is wider than its word gaps.
+    if (a.role == 'desc' && !b.numeric) {
+      final edge = b.x0.truncate() - lo;
+      if (run == null || (run.$2 < edge - 8 && run.$2 - run.$1 < 12)) { // a wide gutter is trusted; only a word-gap-sized one is doubted
+        (int, int)? near;
+        int? s;
+        for (var x = math.max(from, edge - 8); x <= math.min(to - 1, edge); x++) {
+          if (cov[x] <= thr) {
+            s ??= x;
+            if (x - s >= 1) near = (s, x);
+          } else {
+            s = null;
+          }
+        }
+        if (near != null && near.$2 >= edge - 2) run = near;
+      }
+    }
     final best = run == null ? null : (run.$1 + run.$2) / 2, bestW = run == null ? 0 : run.$2 - run.$1 + 1;
     if (best != null && bestW >= 2) {
       cuts.add(best! + lo);

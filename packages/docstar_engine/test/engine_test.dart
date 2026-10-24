@@ -42,6 +42,7 @@ Map<String, dynamic> parse(List<Word> words) => parseDocument(makeDocument([page
 
 void main() {
   pageBreakTests();
+  pageBreakRefTests();
   group('extract', () {
     test('buildLines groups by baseline, orders left to right, and keeps overlapping text on another line', () {
       final doc = makeDocument([
@@ -225,6 +226,48 @@ void main() {
 }
 
 // Page-break repro: last row of page 1 continues at the top of page 2 under a repeated header.
+void pageBreakRefTests() {
+  group('page break narration with a reference column', () {
+    // Date | Narration | Chq./Ref.No. | Debit | Credit | Balance; ref filled only on some rows.
+    List<Word> pg(int from, int n, {Set<int> refs = const {}, String? head, double stretch = 36.0}) {
+      final ws = <Word>[
+        w('ACME', 40, 70, 40), w('BANK', 75, 105, 40),
+        w('Date', 40, 70, 100), w('Narration', 100, 160, 100), w('Chq./Ref.No.', 285, 345, 100),
+        w('Debit', 400, 440, 100), w('Credit', 450, 490, 100), w('Balance', 520, 560, 100),
+      ];
+      var y = 120.0;
+      if (head != null) {
+        ws.addAll([for (final (i, p) in head.split(' ').indexed) w(p, 100 + 40.0 * i, 135 + 40.0 * i, y)]);
+        y += 10;
+      }
+      for (var i = from; i < from + n; i++) {
+        ws.addAll([
+          w('${(i % 28 + 1).toString().padLeft(2, '0')}/06/2026', 40, 95, y),
+          for (final (k, p) in ['NEFT', 'CR-XXXXXX-TLG', 'YYYYY', 'OOOOOOOO', 'LI'].indexed) w(p, 100 + stretch * k, 130 + stretch * k, y),
+          if (refs.contains(i)) w('46558767476', 285, 345, y),
+          m('100.00', 440, y), m(_money(10000 - 100 * (i + 1)), 560, y),
+        ]);
+        y += 10;
+      }
+      return ws;
+    }
+
+    for (final (refs, stretch) in [(<int>{7}, 36.0), (<int>{1, 4, 7}, 36.0), (<int>{7}, 38.0), (<int>{1, 4, 7}, 38.0), (<int>{7}, 37.0), (<int>{1, 4, 7}, 37.0)]) {
+      test('last row of page 1 has a ref, narration continues on page 2 (refs on rows $refs, stretch $stretch)', () {
+        final res = parseDocument(makeDocument([
+          page(pg(0, 8, refs: refs, stretch: stretch), n: 1),
+          page(pg(8, 8, head: 'SECONDHALF', stretch: stretch), n: 2),
+        ]));
+        final txns = (res['sections'] as List).expand((s) => s['transactions'] as List).toList();
+        expect(txns.length, 16);
+        expect(txns[7]['description'], 'NEFT CR-XXXXXX-TLG YYYYY OOOOOOOO LI SECONDHALF');
+        expect(txns[7]['reference'], '46558767476');
+        expect(txns[8]['description'], 'NEFT CR-XXXXXX-TLG YYYYY OOOOOOOO LI');
+      });
+    }
+  });
+}
+
 void pageBreakTests() {
   group('page break narration', () {
     List<Word> pg(int from, int n, {String? tail, String? head}) {

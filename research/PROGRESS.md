@@ -172,6 +172,8 @@ Deliberate deviation: `parseAmount("$")` returns null (Python raises IndexError)
 - Carried narration longer than the columns (runs under the amount columns) was dropped on a headless page: lead-line rule in `docstar_core` `_buildPage` required exactly one column band, now at least one. Tests added (core 78).
 - Engine sections now carry `column_headers` (`{role, header}` with the header as printed) next to the standardized `columns`. Additive; the golden harness ignores it, G1 still 944/944. Output format for consumers (humans and AI): `packages/docstar_engine/OUTPUT.md`.
 
+- Narration/Reference cut: `computeCuts` put the boundary at the widest empty x-run, so a gutter narrower than the gaps between narration words (user's statement: ~3 pt) cut mid-narration; the tail landed in `reference`. Now, when the left column is `desc` and the old run is word-gap-sized, a clean gap ending at the next text column's header edge wins. Needs a gap of at least 2 grid cells (3 pt). Golden parity 944/944 unchanged. Tests: `pageBreakRefTests`.
+
 ## Open items
 
 - **iOS/macOS Flutter apps still fetch PDFium via pdfium_flutter podspec. Must vendor + hash-pin before Finora iOS build.**
