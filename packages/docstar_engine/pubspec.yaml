@@ -1,0 +1,12 @@
+name: docstar_engine
+description: Dart port of the DocStar Python statement engine (words -> reconciled transactions). Pure Dart, zero runtime dependencies.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+
+# Runtime dependencies stay empty: sorting, decimals and NFKD folding are in lib/src.
+
+dev_dependencies:
+  test: ^1.25.0

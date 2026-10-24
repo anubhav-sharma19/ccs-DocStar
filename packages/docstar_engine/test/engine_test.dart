@@ -1,0 +1,186 @@
+// extract / layout / rows / reconcile / engine on hand-built words (no PDF), plus the no-OCR policy tests.
+import 'package:docstar_engine/docstar_engine.dart';
+import 'package:docstar_engine/src/layout.dart';
+import 'package:docstar_engine/src/reconcile.dart';
+import 'package:test/test.dart';
+
+Word w(String t, double x0, double x1, double top, {double size = 9, bool bold = false}) => Word(t, x0, x1, top, top + 8, size, bold);
+
+/// Right-aligned money word ending at [x1].
+Word m(String t, double x1, double top) => w(t, x1 - 6.0 * t.length, x1, top);
+
+Page page(List<Word> words, {int n = 1}) => Page(n, 612, 792, words, []);
+
+/// One statement page: header at y=100, then rows of (date, narration, debit, credit, balance).
+List<Word> statement(List<(String, String, String?, String?, String?)> rows, {String? opening, String? closing}) {
+  final ws = <Word>[
+    w('ACME', 40, 70, 40), w('BANK', 75, 105, 40),
+    w('Date', 40, 70, 100), w('Narration', 100, 160, 100), w('Debit', 300, 340, 100), w('Credit', 360, 400, 100), w('Balance', 430, 480, 100),
+  ];
+  var y = 120.0;
+  if (opening != null) {
+    ws.addAll([w('Opening', 100, 140, y), w('Balance', 145, 185, y), m(opening, 480, y)]);
+    y += 15;
+  }
+  for (final (d, n, deb, cre, bal) in rows) {
+    ws.add(w(d, 40, 95, y));
+    ws.addAll([for (final (i, p) in n.split(' ').indexed) w(p, 100 + 40.0 * i, 135 + 40.0 * i, y)]);
+    if (deb != null) ws.add(m(deb, 340, y));
+    if (cre != null) ws.add(m(cre, 400, y));
+    if (bal != null) ws.add(m(bal, 480, y));
+    y += 15;
+  }
+  if (closing != null) {
+    ws.addAll([w('Closing', 100, 140, y), w('Balance', 145, 185, y), m(closing, 480, y)]);
+  }
+  return ws;
+}
+
+Map<String, dynamic> parse(List<Word> words) => parseDocument(makeDocument([page(words)]));
+
+void main() {
+  group('extract', () {
+    test('buildLines groups by baseline, orders left to right, and keeps overlapping text on another line', () {
+      final doc = makeDocument([
+        page([w('b', 50, 60, 100), w('a', 10, 20, 100.5), w('c', 10, 20, 130), w('over', 12, 30, 100.4)])
+      ]);
+      expect(doc.pages.first.lines.map((l) => l.text), ['over b', 'a', 'c']);
+    });
+    test('unreadable: <8 words, or >30% cid/replacement glyphs', () {
+      expect(unreadable(page([for (var i = 0; i < 7; i++) w('word$i', 10.0 * i, 10.0 * i + 8, 10)])), isTrue);
+      final ok = [for (var i = 0; i < 8; i++) w('word$i', 10.0 * i, 10.0 * i + 8, 10)];
+      expect(unreadable(page(ok)), isFalse);
+      // (cid:N) text is mostly alphanumerics, so it never reaches 30% on its own; replacement glyphs do (T2)
+      expect(unreadable(page([...ok, for (var i = 0; i < 8; i++) w('(cid:$i)(cid:$i)', 10.0 * i, 10.0 * i + 8, 30)])), isFalse);
+      expect(unreadable(page([for (var i = 0; i < 8; i++) w('\uFFFDa\uFFFD\uFFFD', 10.0 * i, 10.0 * i + 8, 10)])), isTrue);
+    });
+    test('words.json round trip', () {
+      final doc = makeDocument([page(statement([('01/01/2024', 'ATM', '5.00', null, '95.00')]))]);
+      final again = loadWords(dumpWords(doc));
+      expect(again.pages.first.lines.map((l) => l.text), doc.pages.first.lines.map((l) => l.text));
+    });
+  });
+
+  group('layout', () {
+    test('detectHeaders finds the roles of a plain header line', () {
+      final doc = makeDocument([page(statement([('01/01/2024', 'ATM', '5.00', null, '95.00')]))]);
+      final h = detectHeaders(doc).values.single;
+      expect(h.roles(), ['date', 'desc', 'debit', 'credit', 'balance']);
+    });
+    test('joinNumericFragments re-joins split amounts and detached suffixes (A12)', () {
+      String j(List<Word> ws, {bool grouped = false}) => joinNumericFragments(ws, grouped).map((x) => x.text).join('|');
+      expect(j([w('10,885.', 0, 36, 0), w('53', 38, 50, 0)]), '10,885. 53');
+      expect(j([w('1', 0, 6, 0), w('234.56', 8, 44, 0)], grouped: true), '1 234.56');
+      expect(j([w('85.57', 0, 30, 0), w('Cr', 32, 44, 0)]), '85.57 Cr');
+      expect(j([w('+', 0, 6, 0), w('400.00', 8, 44, 0)]), '+400.00'); // a lone sign closer to the next number is its prefix
+      expect(j([w('Foo', 0, 20, 0), w('bar', 60, 80, 0)]), 'Foo|bar');
+    });
+  });
+
+  group('reconcile', () {
+    Txn t(String mag, {int? sign, String? bal}) => Txn(null, null, '', '', null, null, bal == null ? null : Dec.parse(bal), 1, 0,
+        magnitude: Dec.parse(mag), sign: sign);
+    Map<String, dynamic> open(String b) => {'kind': 'open', 'balance': Dec.parse(b), 'values': <String, List<String>>{}, 'text': '', 'index': 0, 'date': null};
+
+    test('a gap between two balances is solved when exactly one sign pattern fits', () {
+      final xs = [t('10'), t('30'), t('5', bal: '135')];
+      final c = reconcileSection(xs, [open('100')], 'asc');
+      expect(xs.map((x) => x.sign), [1, 1, -1]);
+      expect(c['gap_solved'], 1);
+      expect(c['balanced'], isTrue);
+    });
+    test('ambiguous gaps are flagged, not guessed', () {
+      final xs = [t('10'), t('10', bal: '100')];
+      reconcileSection(xs, [open('100')], 'asc');
+      expect(xs.every((x) => x.flags.contains('sign_ambiguous')), isTrue);
+    });
+    test('a column sign that contradicts the balance is overruled and flagged (A15)', () {
+      final xs = [t('50', sign: -1, bal: '150')];
+      final c = reconcileSection(xs, [open('100')], 'asc');
+      expect(xs.single.sign, 1);
+      expect(xs.single.flags, contains('column_sign_conflict'));
+      expect(c['conflicts'], 1);
+    });
+    test('a broken chain is a balance_break', () {
+      final xs = [t('50', sign: 1, bal: '175')];
+      final c = reconcileSection(xs, [open('100')], 'asc');
+      expect(xs.single.flags, contains('balance_break'));
+      expect(c['balanced'], isFalse);
+    });
+    test('detectOrder: dates decide, same-day falls back to the chain (R8, R10)', () {
+      Txn d(int day) => Txn(DateTime.utc(2024, 1, day), null, '', '', null, null, null, 1, 0);
+      expect(detectOrder([d(3), d(2), d(1)]), 'desc');
+      expect(detectOrder([d(1), d(2), d(3)]), 'asc');
+      final a = t('10', bal: '90'), b = t('20', bal: '110');
+      expect(detectOrder([a, b]), 'asc');
+    });
+    test('smartJoin glues wrapped narration after / or -', () {
+      expect(smartJoin(['UPI/1234/', 'ABC', 'PAYMENT', '-X']), 'UPI/1234/ABC PAYMENT-X');
+    });
+  });
+
+  group('engine', () {
+    test('plain statement is verified and reconciles', () {
+      final r = parse(statement([
+        ('01/01/2024', 'ATM WITHDRAWAL', '200.00', null, '800.00'),
+        ('02/01/2024', 'SALARY JAN', null, '500.00', '1,300.00'),
+        ('03/01/2024', 'GROCERY STORE', '50.25', null, '1,249.75'),
+      ], opening: '1,000.00', closing: '1,249.75'));
+      expect(r['quality']['status'], 'verified');
+      final s = (r['sections'] as List).single;
+      expect(s['opening'], '1000.00');
+      expect(s['closing'], '1249.75');
+      expect(s['checks']['balanced'], isTrue);
+      expect([for (final t in s['transactions']) (t['date'], t['amount'], t['balance'], t['description'])], [
+        ('2024-01-01', '-200.00', '800.00', 'ATM WITHDRAWAL'),
+        ('2024-01-02', '500.00', '1300.00', 'SALARY JAN'),
+        ('2024-01-03', '-50.25', '1249.75', 'GROCERY STORE'),
+      ]);
+    });
+    test('credit printed in the debit column: the balance wins and the row is flagged (A15)', () {
+      final r = parse(statement([
+        ('01/01/2024', 'ATM WITHDRAWAL', '200.00', null, '800.00'),
+        ('02/01/2024', 'SALARY JAN', '500.00', null, '1,300.00'),
+      ], opening: '1,000.00'));
+      final tx = (r['sections'] as List).single['transactions'] as List;
+      expect(tx[1]['amount'], '500.00');
+      expect(tx[1]['flags'], contains('column_sign_conflict'));
+    });
+    test('a wrapped narration line joins its row (R1)', () {
+      final ws = statement([
+        ('01/01/2024', 'ATM WITHDRAWAL', '200.00', null, '800.00'),
+        ('02/01/2024', 'SALARY JAN', null, '500.00', '1,300.00'),
+      ], opening: '1,000.00');
+      ws.add(w('REF123', 100, 140, 150)); // below the last row, no date or money
+      final tx = (parse(ws)['sections'] as List).single['transactions'] as List;
+      expect(tx.last['description'], 'SALARY JAN REF123');
+    });
+    test('tampered balance is not verified', () {
+      final r = parse(statement([('01/01/2024', 'ATM WITHDRAWAL', '200.00', null, '700.00')], opening: '1,000.00'));
+      expect(r['quality']['status'], isNot('verified'));
+      expect(r['quality']['balance_breaks'], 1);
+    });
+
+    // tests/test_docstar.py: test_image_only_page_is_refused, test_text_page_plus_blank_page_is_not_verified
+    test('image-only pages are refused (no OCR)', () {
+      final q = parseDocument(makeDocument([page([], n: 1), page([], n: 2)]))['quality'];
+      expect(q['status'], 'unsupported_scanned_pdf');
+      expect(q['score'], 0);
+      expect(q['reason'], noOcrNotice);
+      expect(parseDocument(makeDocument([]))['quality']['status'], 'unsupported_scanned_pdf');
+    });
+    test('a text page plus a blank page is never verified', () {
+      final text = page([for (var i = 0; i < 12; i++) w('Statement line number $i of the sample', 50, 300, 700.0 - 20 * i)]);
+      final res = parseDocument(makeDocument([text, page([], n: 2)]));
+      expect(res['quality']['status'], isNot('verified'));
+      expect(res['quality']['status'], isNot('unsupported_scanned_pdf'));
+      expect(res['warnings'], contains('page 2: no readable text layer'));
+    });
+    test('a verified statement with one unreadable page is downgraded to review', () {
+      final pg1 = page(statement([('01/01/2024', 'ATM', '200.00', null, '800.00')], opening: '1,000.00', closing: '800.00'));
+      final res = parseDocument(makeDocument([pg1, page([], n: 2)]));
+      expect(res['quality']['status'], 'review');
+      expect(res['quality']['unreadable_pages'], 1);
+    });
+  });
+}

@@ -156,6 +156,17 @@ Root cause: linking and the carried-line rule only looked at the first table on 
 
 Tests: 2 new synthetic cases (headless and repeated header, account-info block above the table); core 74, adapter 24, CLI 6 all pass. Fixture canonical hashes (13 synthetic fixtures) unchanged. On the user's synthetic statement (`truth.json`): 193/193 narrations present (was 190/193); `check_release.sh` PASS.
 
+## Stage F: Python engine port to Dart (2026-10-24)
+
+`packages/docstar_engine` (pure Dart, zero runtime deps, no IO, no logging) ports `reference/docstar-py/docstar` module by module: `numbers`, `lexicon`, `extract` (pure part), `layout`, `rows`, `reconcile`, `engine`, plus `dec.dart` (BigInt decimal with Python `str`/`.2f` behaviour), `py.dart` (stable sort, half-even `round`, `median`) and a generated NFKD fold table (`tool/gen_fold.py`). `parseDocument(Document, banks:)` returns the same JSON as Python. Not ported: the ML layer (bank is null where Python's `ml` recovered it: 4 + 1 docs, ignored by key in the harness) and the PDF adapter (PORT_PLAN step 9; `makeDocument` is where it plugs in).
+
+Harness (words.json in, no PDFs touched; corpora regenerated from `synth/generate.py`):
+`dart run bin/golden.dart <ref>/eval/corpus --out <pred-dir>` (G1: writes `<name>.pred.json`, diffs against `<name>.expected.json`), then `python3 tool/eval_pred.py <ref> <ref>/eval/corpus <pred-dir>` (run_eval's table plus verified-but-wrong).
+
+Result: G1 944/944 identical (corpus 472, holdout 472). run_eval: corpus 99.8% perfect, holdout 99.4% (same as the Python README). verified-but-wrong on money (date/amount/balance): 0 on both. Strict (narration included): 1 + 2 docs, all inherited from the reference (a trailing `CR` kept in a narration; a wrapped narration split across two rows), not port bugs. Tests: 89 (Python test cases, EDGE_CASES A*/D*/F*/R*/T*, no-OCR policy), hygiene test as in core.
+
+Deliberate deviation: `parseAmount("$")` returns null (Python raises IndexError). Not done: G2/G3 (need the adapter), isolate wrapper, wiring into Finora / Pocket Proof.
+
 ## Open items
 
 - **iOS/macOS Flutter apps still fetch PDFium via pdfium_flutter podspec. Must vendor + hash-pin before Finora iOS build.**
