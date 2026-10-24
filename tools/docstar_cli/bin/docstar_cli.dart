@@ -337,6 +337,14 @@ Future<Map<String, Object?>> _measure(String path, String name, String label, St
         // label, not the real name: the engine JSON's `file` field must not carry it
         final edoc = documentFromCore(laid, path: label);
         final res = eng.parseDocument(edoc, banks: banks);
+        final perPage = <int, int>{};
+        for (final sec in res['sections'] as List) {
+          for (final t in sec['transactions'] as List) {
+            perPage[t['page'] as int] = (perPage[t['page'] as int] ?? 0) + 1;
+          }
+        }
+        stdout.writeln('  engine: ${res['transaction_count']} transactions, quality ${(res['quality'] as Map)['status']}; '
+            'per page (txns/furniture lines): ${[for (final p in edoc.pages) '${p.number}:${perPage[p.number] ?? 0}/${p.lines.where((l) => l.kind == 'furniture').length}'].join(' ')}');
         if (maskFile != null) {
           File('$engineDir/$label.trace.json').writeAsStringSync(jsonEncode(traceEngine(edoc, maskPages)));
           stdout.writeln('  engine trace: wrote $engineDir/$label.trace.json (masked line-by-line view of pages $maskPages)');

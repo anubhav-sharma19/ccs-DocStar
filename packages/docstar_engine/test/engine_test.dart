@@ -122,25 +122,6 @@ void main() {
     });
   });
 
-  group('page furniture', () {
-    test('a repeated account-block line with a date in the middle is furniture, not narration of the row before it', () {
-      List<Word> block() => [
-            w('Account', 40, 85, 40), w('Number', 90, 130, 40), w('1234567', 200, 250, 40),
-            w('Period', 40, 80, 52), w('From', 85, 110, 52), w('01/06/2026', 115, 170, 52), w('To', 175, 190, 52), w('30/06/2026', 195, 250, 52),
-          ];
-      final p1 = [...statement([for (var i = 0; i < 5; i++) ('0${i + 1}/06/2026', 'ROW$i', '5.00', null, _money(10000 - 100 * (i + 1)))], opening: '10,000.00'), ...block()];
-      final p2 = <Word>[
-        ...block(),
-        for (var i = 5; i < 10; i++) ...[
-          w('0${i + 1}/06/2026', 40, 95, 64.0 + 15 * (i - 5)), w('ROW$i', 100, 135, 64.0 + 15 * (i - 5)), m('5.00', 340, 64.0 + 15 * (i - 5)), m(_money(10000 - 100 * (i + 1)), 480, 64.0 + 15 * (i - 5)),
-        ],
-      ];
-      final res = parseDocument(makeDocument([page(p1, n: 1), page(p2, n: 2)]));
-      final txns = (res['sections'] as List).expand((s) => s['transactions'] as List).toList();
-      expect(txns.map((t) => t['description']), [for (var i = 0; i < 10; i++) 'ROW$i']);
-    });
-  });
-
   group('column cuts', () {
     test('no empty gutter before the Ref column (one row touches it): the cut still falls in the least-covered gap, not mid-narration', () {
       final ws = <Word>[

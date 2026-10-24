@@ -443,8 +443,7 @@ void detectFurniture(Document doc) {
       }
       final inBand = topOk || bottomOk;
       final reps = sigs[ln.idx]!.map((k) => sigPages[k]!.length).reduce(math.max);
-      // a transaction line starts with its date; a repeated line with a date in the middle ("Period : 01/06 to 30/06") is furniture
-      final dated = findDates(ln.words.take(3).map((w) => w.text).join(' ')).any((h) => h.start == 0);
+      final dated = findDates(ln.words.take(3).map((w) => w.text).join(' ')).isNotEmpty;
       if (n >= 2 && reps >= need && inBand && !dated) {
         if (lx.openRx.hasMatch(t) || lx.closeRx.hasMatch(t)) continue; // B/F and C/F rows repeat every page but carry balances
         if (_txnLike(ln)) continue; // a dated line with money is a transaction, however often it repeats
