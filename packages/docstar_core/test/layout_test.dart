@@ -442,6 +442,25 @@ void main() {
           expect(t.rowTexts(header ? 1 : 0), ['', long, '', '', '']);
         });
       }
+      test('a continuing page with one row and a tall account block: carried and wrapped lines keep the statement spacing', () {
+        // Page 2 has one data row, so its own gaps (dense account block) are tighter than the statement's wrap spacing.
+        final p1 = statement(pages: 1, rowPitch: 18, wrapEvery: 3, wrapPitch: 18).single;
+        final texts = <T>[
+          const T(50, 40, 'DOCSTAR TEST BANK - ACCOUNT STATEMENT'),
+          for (var i = 0; i < 20; i++) ...[T(50, 60.0 + 8 * i, 'Account Field $i :'), T(330, 60.0 + 8 * i, 'VALUE $i')],
+          const T(xDesc, 232, 'CARRIED ONE'), const T(xDesc, 250, 'CARRIED TWO'),
+          const T(xDate, 268, '05/07/2026'), const T(xDesc, 268, 'UPI/ROW'), r(rDebit, 268, '9.00'), r(rBal, 268, '99.00'),
+          const T(xDesc, 286, 'WRAPPED ONE'), const T(xDesc, 304, 'WRAPPED TWO'),
+          const T(50, 352, 'Total'), r(rDebit, 352, '9.00'), r(rBal, 352, '99.00'),
+        ];
+        final doc = layout([p1, page(2, texts)]);
+        final stmt = [for (final t in doc.tables) if (t.cols == 5) t];
+        final t = stmt.last;
+        expect(t.continuesFrom, isNotNull);
+        expect(t.continuesRow, isTrue);
+        expect(t.rowTexts(0), ['', 'CARRIED ONE CARRIED TWO', '', '', '']);
+        expect(t.rowTexts(1), ['05/07/2026', 'UPI/ROW WRAPPED ONE WRAPPED TWO', '9.00', '', '99.00']);
+      });
       test('negative: a line two blank lines above the table stays text', () {
         final p1 = statement(pages: 1).single;
         final p2 = page(2, [

@@ -431,7 +431,8 @@ class _TableInfo {
   final Table table;
   final List<_Range> cols;
   final String? headerKey;
-  _TableInfo(this.table, this.cols, this.headerKey);
+  final double contGap; // the wrap spacing its page allowed; a continuing page inherits it
+  _TableInfo(this.table, this.cols, this.headerKey, this.contGap);
 }
 
 /// Words of a line split where the gap is wider than [gap] (cells of a row).
@@ -522,6 +523,16 @@ _PageBuild _buildPage(
   final gaps = [for (var i = 1; i < body.length; i++) body[i].box.top - body[i - 1].box.bottom]
     ..removeWhere((g) => g <= 0);
   final contGap = math.max(cfg.continuationGapLines * p.lineHeight, cfg.continuationGapSlack * _median(gaps));
+  // A continuing page may hold a single row, so its own gaps (account block, summary) say little about the
+  // statement's wrap spacing: a run on the previous table's columns may wrap as far as that page allowed.
+  // ponytail: never shrinks along a chain; a per-table estimate if a statement changes its spacing mid-way.
+  final wrapGap = math.max(contGap, prevLast?.contGap ?? 0);
+  final matchTol = cfg.headlessTolerancePitch * p.pitch;
+  bool onPrevCols(List<_Range> bands) =>
+      prevLast != null &&
+      bands.length >= 3 &&
+      (_colsSubset(bands, prevLast.cols, matchTol) || _colsSubset(prevLast.cols, bands, matchTol));
+  double gapFor(List<_Range> bands) => onPrevCols(bands) ? wrapGap : contGap;
 
   // --- find runs of table-like lines (LR3)
   final runs = <_Run>[];
@@ -536,7 +547,7 @@ _PageBuild _buildPage(
     if (fits && !rowLike) {
       // One unbroken run is a wrapped narration, even when it runs on under the amount columns.
       final hits = _hits(segs.first, cur.bands).length;
-      fits = hits >= 1 && l.box.top - prev.box.bottom <= contGap;
+      fits = hits >= 1 && l.box.top - prev.box.bottom <= gapFor(cur.bands);
       if (hits == 1) add.addAll(segs);
     } else if (fits) {
       final bands = cur.bands;
@@ -588,7 +599,23 @@ _PageBuild _buildPage(
     final tol = cfg.headlessTolerancePitch * p.pitch;
     // Any table near the top of a continuing page may be the continuation, not only the first one:
     // an account-info block above the statement table is a table too.
-    final atTop = prevLast != null && run.lines.first.box.top <= headerBottom + cfg.headlessTopBand * p.h;
+    // Narration wrapped over the page break: single-column lines just above the run (top of page, wrap
+    // spacing) belong to it, and the run counts as at the top when they do.
+    final lead = <_Line>[];
+    for (var i = body.indexOf(run.lines.first) - 1; i >= 0; i--) {
+      final l = body[i], next = lead.isEmpty ? run.lines.first : lead.first;
+      final segs = _segments(l, segGap);
+      if (segs.length != 1 ||
+          tall(l) ||
+          isSection(l) ||
+          _hits(segs.first, run.bands).isEmpty || // one unbroken run may span several columns
+          next.box.top - l.box.bottom > gapFor(run.bands)) {
+        break;
+      }
+      lead.insert(0, l);
+    }
+    final leadAtTop = lead.isNotEmpty && lead.first.box.top <= headerBottom + cfg.headlessTopBand * p.h;
+    final atTop = prevLast != null && ((leadAtTop ? lead.first : run.lines.first).box.top <= headerBottom + cfg.headlessTopBand * p.h);
     // Fewer columns than the previous page, each matching one of its columns in order:
     // a sparse column (e.g. credits) has no entry on this page.
     final fewer = atTop && cols.length < prevLast.cols.length && _colsSubset(cols, prevLast.cols, tol);
@@ -605,24 +632,7 @@ _PageBuild _buildPage(
     // A narration wrapped over the page break: single-column lines just above the
     // first table of a continuing page (top of page, wrap spacing) belong to it.
     var lines = run.lines;
-    if (headerLine == null && headless) {
-      final lead = <_Line>[];
-      for (var i = body.indexOf(run.lines.first) - 1; i >= 0; i--) {
-        final l = body[i], next = lead.isEmpty ? run.lines.first : lead.first;
-        final segs = _segments(l, segGap);
-        if (segs.length != 1 ||
-            tall(l) ||
-            isSection(l) ||
-            _hits(segs.first, run.bands).isEmpty || // one unbroken run may span several columns
-            next.box.top - l.box.bottom > contGap) {
-          break;
-        }
-        lead.insert(0, l);
-      }
-      if (lead.isNotEmpty && lead.first.box.top <= headerBottom + cfg.headlessTopBand * p.h) {
-        lines = [...lead, ...run.lines];
-      }
-    }
+    if (headerLine == null && headless && leadAtTop) lines = [...lead, ...run.lines];
     cols = forced[(p.input.number, lines.first.idx)] ?? cols;
     final table = _grid(p, lines, cols, headerLine, hints, cfg, header != null);
     tableLines.addAll(lines);
@@ -722,7 +732,7 @@ _PageBuild _buildPage(
         linked = table.continuesFrom != null;
       }
       table.continuesRow = table.continuesFrom != null && info.firstRowContinues;
-      lastInfo = _TableInfo(table, info.cols, info.headerKey);
+      lastInfo = _TableInfo(table, info.cols, info.headerKey, wrapGap);
       builtTables.add(_BuiltTable(table, n, b.$2.first.idx, info.cols));
     }
     blocks.add(Block('p$n.b${blocks.length}', b.$1, [for (final l in b.$2) lineObj[l]!], box, table: table));

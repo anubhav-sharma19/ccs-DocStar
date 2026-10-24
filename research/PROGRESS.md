@@ -174,6 +174,9 @@ Deliberate deviation: `parseAmount("$")` returns null (Python raises IndexError)
 
 - Narration/Reference cut: `computeCuts` put the boundary at the widest empty x-run, so a gutter narrower than the gaps between narration words (user's statement: ~3 pt) cut mid-narration; the tail landed in `reference`. Now, when the left column is `desc` and the old run is word-gap-sized, a clean gap ending at the next text column's header edge wins. Needs a gap of at least 2 grid cells (3 pt). Golden parity 944/944 unchanged. Tests: `pageBreakRefTests`.
 
+- Page-break link lost on a page with a single statement row (user's pages 14/15, from a masked `--mask` dump): the "top of page" test used the first table row (below a 26%-tall account block) instead of the carried narration above it, and the wrap spacing came from the account block's dense lines (6.7 pt vs the statement's 12.5 pt), so carried lines above and wrapped lines below the row were dropped and no table was linked. Now the carried lines count for "at top", and a run on the previous page's columns inherits that page's wrap spacing (`_TableInfo.contGap`). Test: 'a continuing page with one row and a tall account block' (fails without the inheritance).
+- **Open, found in the same dump:** on page 14 the account block's last line (gap ~10 pt) is joined to the first statement rows, so the first two transactions of a page land in the account-info table instead of the statement table.
+
 ## Open items
 
 - **iOS/macOS Flutter apps still fetch PDFium via pdfium_flutter podspec. Must vendor + hash-pin before Finora iOS build.**
